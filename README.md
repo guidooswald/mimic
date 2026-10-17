@@ -1,6 +1,6 @@
 # Mimic — Dual-Process AI Architecture (*Thinking, Fast and Slow*)
 
-Mimic is a modern AI routing web application inspired by Nobel laureate **Daniel Kahneman’s** book ***Thinking, Fast and Slow***.
+Mimic is a modern AI routing web application inspired by Nobel laureate **Daniel Kahneman’s** book [***Thinking, Fast and Slow***](https://www.amazon.com/-/de/dp/0374533555/).
 
 In human cognition, Kahneman describes two distinct modes of thought:
 - **System 1 (Fast Thinking)**: Automatic, instantaneous, intuitive, and low-effort. It continuously assesses situations, recognizes patterns, answers familiar questions effortlessly, and decides when a problem is too hard and requires deeper concentration.
