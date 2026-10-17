@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Bot,
   MessageSquare,
   SlidersHorizontal,
   CheckCircle2,
   Activity,
+  Lock,
 } from 'lucide-react';
 import { AppConfig, ChatMessage, SophisticatedModel } from './types';
 import { DEFAULT_CONFIG } from './defaultConfig';
@@ -15,17 +16,31 @@ import {
   executeJeffRoutingPipeline,
   forceCallSophisticatedModel,
 } from './services/routerEngine';
+import {
+  loadEncryptedVaultCredentials,
+  LocalVaultMetadata,
+  saveEncryptedVaultCredentials,
+} from './services/vaultService';
 
 const CONFIG_STORAGE_KEY = 'mimic_app_config_v2';
 const MESSAGES_STORAGE_KEY = 'mimic_chat_messages_v2';
 
-function loadInitialConfig(): AppConfig {
+function loadInitialNonSecretConfig(): AppConfig {
   try {
     const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
     if (!raw) return DEFAULT_CONFIG;
     const parsed = JSON.parse(raw);
     return {
-      credentials: { ...DEFAULT_CONFIG.credentials, ...parsed.credentials },
+      // Never load or trust raw API keys from localStorage; they come from .secrets/credentials.enc.json
+      credentials: {
+        ...DEFAULT_CONFIG.credentials,
+        useDemoModeWhenUnconfigured:
+          parsed.credentials?.useDemoModeWhenUnconfigured ??
+          DEFAULT_CONFIG.credentials.useDemoModeWhenUnconfigured,
+        customEndpointUrl:
+          parsed.credentials?.customEndpointUrl ||
+          DEFAULT_CONFIG.credentials.customEndpointUrl,
+      },
       jeff: { ...DEFAULT_CONFIG.jeff, ...parsed.jeff },
       sophisticatedModels:
         Array.isArray(parsed.sophisticatedModels) && parsed.sophisticatedModels.length > 0
@@ -50,16 +65,38 @@ function loadInitialMessages(): ChatMessage[] {
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'chat' | 'config'>('chat');
-  const [config, setConfig] = useState<AppConfig>(loadInitialConfig);
+  const [config, setConfig] = useState<AppConfig>(loadInitialNonSecretConfig);
   const [messages, setMessages] = useState<ChatMessage[]>(loadInitialMessages);
   const [isProcessing, setIsProcessing] = useState(false);
   const [oauthToast, setOauthToast] = useState<string | null>(null);
+  const [vaultMetadata, setVaultMetadata] = useState<LocalVaultMetadata>({
+    exists: false,
+    encryptedFilePath: '.secrets/credentials.enc.json',
+    algorithm: 'AES-256-GCM',
+    updatedAt: null,
+    cipherPreview: null,
+  });
 
+  const isVaultLoadedRef = useRef(false);
+
+  // Persist ONLY non-sensitive settings to localStorage (strip all API keys)
   useEffect(() => {
     try {
-      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
+      const sanitizedConfig = {
+        ...config,
+        credentials: {
+          openRouterApiKey: '',
+          openRouterConnectedViaOAuth: config.credentials.openRouterConnectedViaOAuth,
+          typeSafeApiKey: '',
+          geminiApiKey: '',
+          customEndpointUrl: config.credentials.customEndpointUrl,
+          customApiKey: '',
+          useDemoModeWhenUnconfigured: config.credentials.useDemoModeWhenUnconfigured,
+        },
+      };
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(sanitizedConfig));
     } catch (e) {
-      console.error('Failed to persist config:', e);
+      console.error('Failed to persist non-secret config:', e);
     }
   }, [config]);
 
@@ -71,28 +108,68 @@ export function App() {
     }
   }, [messages]);
 
-  // Handle OpenRouter OAuth PKCE redirect callback automatically
+  // Load encrypted API credentials from `.secrets/credentials.enc.json` on startup
   useEffect(() => {
-    checkAndExchangeOpenRouterOAuthCode()
-      .then((apiKey) => {
-        if (apiKey) {
+    loadEncryptedVaultCredentials()
+      .then(async ({ metadata, credentials }) => {
+        setVaultMetadata(metadata);
+        if (credentials) {
           setConfig((prev) => ({
             ...prev,
             credentials: {
               ...prev.credentials,
-              openRouterApiKey: apiKey,
-              openRouterConnectedViaOAuth: true,
+              ...credentials,
             },
           }));
-          setOauthToast('Successfully authenticated with OpenRouter!');
+        }
+        isVaultLoadedRef.current = true;
+
+        // Next, check if returning from OpenRouter OAuth PKCE flow
+        const oauthKey = await checkAndExchangeOpenRouterOAuthCode();
+        if (oauthKey) {
+          setConfig((prev) => {
+            const nextCreds = {
+              ...prev.credentials,
+              ...(credentials || {}),
+              openRouterApiKey: oauthKey,
+              openRouterConnectedViaOAuth: true,
+            };
+            saveEncryptedVaultCredentials(nextCreds)
+              .then((meta) => setVaultMetadata(meta))
+              .catch(console.error);
+            return {
+              ...prev,
+              credentials: nextCreds,
+            };
+          });
+          setOauthToast(
+            'Authenticated with OpenRouter! API key encrypted to .secrets/credentials.enc.json'
+          );
           setTimeout(() => setOauthToast(null), 5000);
         }
       })
       .catch((err) => {
-        setOauthToast(`OpenRouter OAuth failed: ${err.message}`);
-        setTimeout(() => setOauthToast(null), 6000);
+        console.error('Vault load error:', err);
+        isVaultLoadedRef.current = true;
       });
   }, []);
+
+  // Automatically encrypt and save credentials to `.secrets/credentials.enc.json` whenever updated
+  const handleUpdateConfig = (next: AppConfig) => {
+    const credsChanged =
+      next.credentials.openRouterApiKey !== config.credentials.openRouterApiKey ||
+      next.credentials.typeSafeApiKey !== config.credentials.typeSafeApiKey ||
+      next.credentials.geminiApiKey !== config.credentials.geminiApiKey ||
+      next.credentials.customApiKey !== config.credentials.customApiKey;
+
+    setConfig(next);
+
+    if (isVaultLoadedRef.current && credsChanged) {
+      saveEncryptedVaultCredentials(next.credentials)
+        .then((meta) => setVaultMetadata(meta))
+        .catch((err) => console.error('Failed to save encrypted vault:', err));
+    }
+  };
 
   const handleSendPrompt = async (prompt: string) => {
     const userMsgId = `user-${Date.now()}`;
@@ -336,11 +413,16 @@ export function App() {
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>Configuration &amp; APIs</span>
+            {vaultMetadata.exists && (
+              <span title="Encrypted in .secrets/credentials.enc.json">
+                <Lock className="w-3 h-3 text-emerald-400" />
+              </span>
+            )}
             <span
               className={`w-2 h-2 rounded-full ${
                 isConnected ? 'bg-emerald-400' : 'bg-amber-400'
               }`}
-              title={isConnected ? 'API Key Configured' : 'Demo Mode (Click to configure API)'}
+              title={isConnected ? 'API Key Encrypted & Active' : 'Demo Mode (Click to configure API)'}
             />
           </button>
         </div>
@@ -359,7 +441,12 @@ export function App() {
             onOpenSettings={() => setActiveTab('config')}
           />
         ) : (
-          <ConfigView config={config} onUpdateConfig={setConfig} />
+          <ConfigView
+            config={config}
+            vaultMetadata={vaultMetadata}
+            onUpdateConfig={handleUpdateConfig}
+            onVaultMetadataChange={setVaultMetadata}
+          />
         )}
       </main>
     </div>

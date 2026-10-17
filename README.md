@@ -89,6 +89,7 @@ Mimic supports calling **Jev** either via **OpenRouter’s Decisions API** (`POS
 
 - **Live System 1 Telemetry Card**: Every chat message displays Jev’s real-time `noul` percentage, `score` (`0.0–3.0`), and `choice` probability distribution across your System 2 roster.
 - **1-Click OpenRouter OAuth PKCE Login**: Authenticate directly with OpenRouter in the browser (or paste an OpenRouter / TypeSafe / Gemini API key) on the **Configuration & APIs** page.
+- **Local AES-256-GCM Encrypted API Key Vault**: API keys are never stored in browser `localStorage` or committed to Git. Instead, the local server encrypts your credentials with **AES-256-GCM** into `.secrets/credentials.enc.json` (paired with a local 256-bit key in `.secrets/.master.key`), and `.secrets/`, `*.enc*`, and `*.key` are strictly excluded via `.gitignore`.
 - **Customizable System 2 Roster**: Enable, disable, edit, or add models from the live OpenRouter catalog. Every model’s description is dynamically wired into Jev’s `choice` criteria.
 - **Manual System 2 Override**: Click any System 2 model pill underneath a message to manually escalate or compare responses across tiers.
 

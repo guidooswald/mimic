@@ -3,12 +3,20 @@ logs
 *.log
 npm-debug.log*
 
-# Dependencies
+# Dependencies & Build
 node_modules
 dist
 dist-ssr
 *.local
 *.tsbuildinfo
+
+# Local Encrypted API Key Vault & Secrets (NEVER commit to GitHub)
+.secrets/
+*.enc
+*.enc.json
+*.key
+.env
+.env.*
 
 # Editor directories and files
 .vscode/*

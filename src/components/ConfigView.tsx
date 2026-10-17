@@ -4,20 +4,20 @@ import {
   LogIn,
   CheckCircle2,
   AlertCircle,
-  Bot,
   Plus,
   Trash2,
   RotateCcw,
   ExternalLink,
   Search,
   Sparkles,
-  Server,
   ShieldCheck,
   RefreshCw,
   Sliders,
   Eye,
   EyeOff,
   Gauge,
+  Lock,
+  FileLock2,
 } from 'lucide-react';
 import {
   AppConfig,
@@ -34,16 +34,29 @@ import {
   OpenRouterKeyInfo,
   verifyOpenRouterApiKey,
 } from '../services/openrouterAuth';
+import {
+  clearEncryptedVaultCredentials,
+  LocalVaultMetadata,
+  saveEncryptedVaultCredentials,
+} from '../services/vaultService';
 
 interface ConfigViewProps {
   config: AppConfig;
+  vaultMetadata: LocalVaultMetadata;
   onUpdateConfig: (next: AppConfig) => void;
+  onVaultMetadataChange: (meta: LocalVaultMetadata) => void;
 }
 
-export const ConfigView: React.FC<ConfigViewProps> = ({ config, onUpdateConfig }) => {
+export const ConfigView: React.FC<ConfigViewProps> = ({
+  config,
+  vaultMetadata,
+  onUpdateConfig,
+  onVaultMetadataChange,
+}) => {
   const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
   const [showTypeSafeKey, setShowTypeSafeKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [savingVault, setSavingVault] = useState(false);
 
   const [verifyingKey, setVerifyingKey] = useState(false);
   const [keyStatus, setKeyStatus] = useState<{
@@ -93,6 +106,38 @@ export const ConfigView: React.FC<ConfigViewProps> = ({ config, onUpdateConfig }
     });
   };
 
+  const handleExplicitVaultSave = async () => {
+    setSavingVault(true);
+    try {
+      const meta = await saveEncryptedVaultCredentials(config.credentials);
+      onVaultMetadataChange(meta);
+    } finally {
+      setSavingVault(false);
+    }
+  };
+
+  const handleClearVault = async () => {
+    await clearEncryptedVaultCredentials();
+    onUpdateConfig({
+      ...config,
+      credentials: {
+        ...config.credentials,
+        openRouterApiKey: '',
+        openRouterConnectedViaOAuth: false,
+        typeSafeApiKey: '',
+        geminiApiKey: '',
+        customApiKey: '',
+      },
+    });
+    onVaultMetadataChange({
+      exists: false,
+      encryptedFilePath: '.secrets/credentials.enc.json',
+      algorithm: 'AES-256-GCM',
+      updatedAt: null,
+      cipherPreview: null,
+    });
+  };
+
   const handleVerifyOpenRouter = async () => {
     if (!config.credentials.openRouterApiKey.trim()) {
       setKeyStatus({ valid: false, error: 'Please enter an OpenRouter API key first.' });
@@ -102,6 +147,8 @@ export const ConfigView: React.FC<ConfigViewProps> = ({ config, onUpdateConfig }
     setKeyStatus({});
     try {
       const info = await verifyOpenRouterApiKey(config.credentials.openRouterApiKey);
+      const meta = await saveEncryptedVaultCredentials(config.credentials);
+      onVaultMetadataChange(meta);
       setKeyStatus({ valid: true, info });
     } catch (err: any) {
       setKeyStatus({ valid: false, error: err?.message || 'Verification failed' });
@@ -217,7 +264,7 @@ export const ConfigView: React.FC<ConfigViewProps> = ({ config, onUpdateConfig }
         </button>
       </div>
 
-      {/* SECTION 1: OpenRouter Login & TypeSafe / Gemini Credentials */}
+      {/* SECTION 1: OpenRouter Login & Local Encrypted Vault */}
       <section className="rounded-2xl bg-slate-900/70 border border-slate-800 p-5 sm:p-6 space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -226,13 +273,12 @@ export const ConfigView: React.FC<ConfigViewProps> = ({ config, onUpdateConfig }
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-semibold text-white">
-                1. Provider Login &amp; API Keys
+                1. Provider Login &amp; Local Encrypted API Key Vault
               </h2>
               <p className="text-xs text-slate-400">
-                OpenRouter supports both TypeSafe&apos;s{' '}
-                <code className="text-emerald-300">typesafe/jev-1.14</code> (via{' '}
-                <code>/api/alpha/decisions</code>) and System 2 LLMs (Gemini Flash, Argon, Claude)
-                under a single login.
+                API keys are automatically encrypted on disk using <strong>AES-256-GCM</strong> in{' '}
+                <code className="text-emerald-300">.secrets/credentials.enc.json</code> and excluded
+                from Git via <code>.gitignore</code>.
               </p>
             </div>
           </div>
@@ -250,6 +296,62 @@ export const ConfigView: React.FC<ConfigViewProps> = ({ config, onUpdateConfig }
                 : 'Log in with OpenRouter (OAuth)'}
             </span>
           </button>
+        </div>
+
+        {/* Local AES-256-GCM Encrypted File Status Banner */}
+        <div className="p-3.5 rounded-xl bg-slate-950/90 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-400">
+              <FileLock2 className="w-4 h-4" />
+            </div>
+            <div className="text-xs space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-emerald-300">
+                  Local Encrypted Vault ({vaultMetadata.algorithm})
+                </span>
+                <code className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[11px] text-slate-300">
+                  {vaultMetadata.encryptedFilePath}
+                </code>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] text-emerald-300 font-medium">
+                  Git-Ignored
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {vaultMetadata.exists ? (
+                  <>
+                    Encrypted on disk • Ciphertext:{' '}
+                    <code className="text-slate-300">{vaultMetadata.cipherPreview}</code>
+                    {vaultMetadata.updatedAt
+                      ? ` • Updated ${new Date(vaultMetadata.updatedAt).toLocaleTimeString()}`
+                      : ''}
+                  </>
+                ) : (
+                  'No encrypted vault file written yet — enter an API key or log in with OpenRouter to create .secrets/credentials.enc.json.'
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExplicitVaultSave}
+              disabled={savingVault}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-medium transition-colors cursor-pointer"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>{savingVault ? 'Encrypting...' : 'Encrypt & Save Now'}</span>
+            </button>
+            {vaultMetadata.exists && (
+              <button
+                type="button"
+                onClick={handleClearVault}
+                className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs transition-colors cursor-pointer"
+              >
+                Wipe Vault
+              </button>
+            )}
+          </div>
         </div>
 
         {/* OpenRouter + TypeSafe Native API Keys */}
@@ -303,7 +405,7 @@ export const ConfigView: React.FC<ConfigViewProps> = ({ config, onUpdateConfig }
               <div className="flex items-center gap-1.5 text-xs text-emerald-400 pt-1">
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                 <span>
-                  Connected! Key verified{' '}
+                  Verified &amp; encrypted to <code>.secrets/credentials.enc.json</code>{' '}
                   {keyStatus.info?.usage !== undefined
                     ? `(Usage: $${Number(keyStatus.info.usage).toFixed(4)})`
                     : ''}
@@ -351,7 +453,8 @@ export const ConfigView: React.FC<ConfigViewProps> = ({ config, onUpdateConfig }
               </button>
             </div>
             <p className="text-[11px] text-slate-400">
-              Used if you select <strong>TypeSafe Native Cloud</strong> (<code>api.typesafe.ai/v1/systemone</code>) as Jev&apos;s provider instead of OpenRouter.
+              Also encrypted in <code>.secrets/credentials.enc.json</code>. Used when{' '}
+              <strong>TypeSafe Native Cloud</strong> is selected for Jev.
             </p>
           </div>
         </div>
