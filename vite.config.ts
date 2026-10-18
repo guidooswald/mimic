@@ -97,10 +97,32 @@ function decryptCredentials(): {
   }
 }
 
+const MAX_VAULT_BODY_BYTES = 100 * 1024; // 100 KB limit for credentials payload
+
 function createVaultMiddleware() {
   return (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (!req.url || !req.url.startsWith('/api/local-vault')) {
       return next();
+    }
+
+    // Security: Only allow requests originating from localhost / same-origin dev server
+    const host = req.headers.host || '';
+    const origin = (req.headers.origin as string) || '';
+    if (origin) {
+      try {
+        const originUrl = new URL(origin);
+        if (originUrl.hostname !== 'localhost' && originUrl.hostname !== '127.0.0.1') {
+          res.statusCode = 403;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Access denied: Cross-origin vault access forbidden' }));
+          return;
+        }
+      } catch {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Invalid origin header' }));
+        return;
+      }
     }
 
     res.setHeader('Content-Type', 'application/json');
@@ -123,10 +145,21 @@ function createVaultMiddleware() {
 
     if (req.method === 'POST') {
       let body = '';
+      let bodyLength = 0;
+
       req.on('data', (chunk) => {
+        bodyLength += chunk.length;
+        if (bodyLength > MAX_VAULT_BODY_BYTES) {
+          res.statusCode = 413;
+          res.end(JSON.stringify({ error: 'Payload too large' }));
+          req.destroy();
+          return;
+        }
         body += chunk;
       });
+
       req.on('end', () => {
+        if (res.writableEnded) return;
         try {
           const parsed = JSON.parse(body || '{}');
           const creds = parsed.credentials || {};

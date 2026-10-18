@@ -267,7 +267,23 @@ async function callGenerativeCompletion(
     return data?.choices?.[0]?.message?.content || '';
   }
 
-  const baseUrl = config.credentials.customEndpointUrl.trim().replace(/\/+$/, '');
+  const rawCustomUrl = config.credentials.customEndpointUrl.trim();
+  if (!rawCustomUrl) {
+    throw new Error('Custom endpoint URL is not configured.');
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(rawCustomUrl);
+  } catch {
+    throw new Error(`Invalid custom endpoint URL: "${rawCustomUrl}". Must be a valid HTTP or HTTPS URL.`);
+  }
+
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new Error(`Invalid URL scheme "${parsedUrl.protocol}". Only http: and https: are allowed.`);
+  }
+
+  const baseUrl = parsedUrl.toString().replace(/\/+$/, '');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
