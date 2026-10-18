@@ -179,7 +179,16 @@ export function App() {
     }
   };
 
-  const handleSendPrompt = async (prompt: string) => {
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleCancelRequest = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleSendPrompt = async (prompt: string, triageOnly = false) => {
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now() + 1}`;
     const startTimestamp = performance.now();
@@ -199,11 +208,15 @@ export function App() {
       userPrompt: prompt,
       timestamp: Date.now(),
       status: 'jeff_evaluating',
+      isTriageOnly: triageOnly,
     };
 
     const historySnapshot = [...messages, userMessage];
     setMessages([...historySnapshot, placeholderAssistant]);
     setIsProcessing(true);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       const result = await executeJeffRoutingPipeline(
@@ -219,11 +232,17 @@ export function App() {
                     routing: decision,
                     status: decision.answeredByJeff
                       ? 'jeff_evaluating'
+                      : triageOnly
+                      ? 'jeff_evaluating'
                       : 'escalating_to_model',
                   }
                 : m
             )
           );
+        },
+        {
+          signal: controller.signal,
+          triageOnly,
         }
       );
 
@@ -242,23 +261,41 @@ export function App() {
                 finalModelTier: result.finalModelTier,
                 escalationLatencyMs: result.escalationLatencyMs,
                 totalLatencyMs,
+                isTriageOnly: triageOnly,
               }
             : m
         )
       );
     } catch (err: any) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantMsgId
-            ? {
-                ...m,
-                status: 'error',
-                errorMessage: err?.message || 'Unexpected error during routing.',
-              }
-            : m
-        )
-      );
+      if (err?.name === 'AbortError' || controller.signal.aborted) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? {
+                  ...m,
+                  status: 'cancelled',
+                  errorMessage: 'Generation was cancelled by the user.',
+                }
+              : m
+          )
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? {
+                  ...m,
+                  status: 'error',
+                  errorMessage: err?.message || 'Unexpected error during routing.',
+                }
+              : m
+          )
+        );
+      }
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setIsProcessing(false);
     }
   };
@@ -269,6 +306,9 @@ export function App() {
 
     setIsProcessing(true);
     const prevRouting = targetMsg.routing;
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     setMessages((prev) =>
       prev.map((m) =>
@@ -299,7 +339,8 @@ export function App() {
         targetMsg.userPrompt,
         historyBefore,
         targetModel,
-        config
+        config,
+        controller.signal
       );
 
       setMessages((prev) =>
@@ -319,18 +360,35 @@ export function App() {
         )
       );
     } catch (err: any) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? {
-                ...m,
-                status: 'error',
-                errorMessage: err?.message || 'Manual escalation failed.',
-              }
-            : m
-        )
-      );
+      if (err?.name === 'AbortError' || controller.signal.aborted) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  status: 'cancelled',
+                  errorMessage: 'Manual escalation cancelled by the user.',
+                }
+              : m
+          )
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  status: 'error',
+                  errorMessage: err?.message || 'Manual escalation failed.',
+                }
+              : m
+          )
+        );
+      }
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setIsProcessing(false);
     }
   };
@@ -454,6 +512,7 @@ export function App() {
             messages={messages}
             isProcessing={isProcessing}
             onSendPrompt={handleSendPrompt}
+            onCancel={handleCancelRequest}
             onForceEscalate={handleForceEscalate}
             onClearChat={() => setMessages([])}
             onOpenSettings={() => setActiveTab('config')}

@@ -71,13 +71,19 @@ export interface RoutingDecision {
   jevPrimitives?: JevPrimitivesBreakdown;
 }
 
+export interface PipelineOptions {
+  signal?: AbortSignal;
+  triageOnly?: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   userPrompt?: string;
   timestamp: number;
-  status: 'jeff_evaluating' | 'escalating_to_model' | 'complete' | 'error';
+  status: 'jeff_evaluating' | 'escalating_to_model' | 'complete' | 'cancelled' | 'error';
+  isTriageOnly?: boolean;
   routing?: RoutingDecision;
   finalModelName?: string;
   finalModelId?: string;

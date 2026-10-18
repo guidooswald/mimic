@@ -17,6 +17,10 @@ import {
   Clock,
   Layers,
   Gauge,
+  StopCircle,
+  Ban,
+  Play,
+  Split,
 } from 'lucide-react';
 import { AppConfig, ChatMessage, SophisticatedModel } from '../types';
 import { SAMPLE_PROMPTS } from '../defaultConfig';
@@ -26,7 +30,8 @@ interface ChatViewProps {
   config: AppConfig;
   messages: ChatMessage[];
   isProcessing: boolean;
-  onSendPrompt: (prompt: string) => void;
+  onSendPrompt: (prompt: string, triageOnly?: boolean) => void;
+  onCancel: () => void;
   onForceEscalate: (messageId: string, model: SophisticatedModel) => void;
   onClearChat: () => void;
   onOpenSettings: () => void;
@@ -58,11 +63,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
   messages,
   isProcessing,
   onSendPrompt,
+  onCancel,
   onForceEscalate,
   onClearChat,
   onOpenSettings,
 }) => {
   const [input, setInput] = useState('');
+  const [triageOnly, setTriageOnly] = useState(false);
   const [expandedTraces, setExpandedTraces] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -78,7 +85,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = (e?: React.FormEvent, forceTriageOnly?: boolean) => {
     if (e) e.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || isProcessing) return;
@@ -86,7 +93,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    onSendPrompt(trimmed);
+    const isTriage = forceTriageOnly !== undefined ? forceTriageOnly : triageOnly;
+    onSendPrompt(trimmed, isTriage);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -478,17 +486,84 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
                   {/* Stage 2 (System 2) Escalation Loading Indicator */}
                   {msg.status === 'escalating_to_model' && msg.routing && (
-                    <div className="rounded-2xl px-4 py-4 bg-slate-900/90 border border-indigo-500/30 flex items-center gap-3 text-sm text-slate-200 shadow-lg">
-                      <RefreshCw className="w-4 h-4 animate-spin text-indigo-400 shrink-0" />
-                      <div>
-                        <span className="font-semibold text-indigo-300">
-                          System 2 Activated: Calling {msg.routing.selectedModelName}
-                        </span>{' '}
-                        <span className="text-slate-400 text-xs">
-                          — {config.jeff.displayName} (System 1) delegated this prompt for{' '}
-                          {msg.routing.selectedModelTier.toUpperCase()}-tier slow thinking...
-                        </span>
+                    <div className="rounded-2xl px-4 py-4 bg-slate-900/90 border border-indigo-500/30 flex items-center justify-between gap-3 text-sm text-slate-200 shadow-lg">
+                      <div className="flex items-center gap-3">
+                        <RefreshCw className="w-4 h-4 animate-spin text-indigo-400 shrink-0" />
+                        <div>
+                          <span className="font-semibold text-indigo-300">
+                            System 2 Activated: Calling {msg.routing.selectedModelName}
+                          </span>{' '}
+                          <span className="text-slate-400 text-xs">
+                            — {config.jeff.displayName} (System 1) delegated this prompt for{' '}
+                            {msg.routing.selectedModelTier.toUpperCase()}-tier slow thinking...
+                          </span>
+                        </div>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={onCancel}
+                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 hover:text-white text-xs font-medium transition-colors cursor-pointer"
+                        title="Cancel this System 2 call"
+                      >
+                        <StopCircle className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Cancel</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Cancelled State */}
+                  {msg.status === 'cancelled' && (
+                    <div className="rounded-2xl px-4 py-3.5 bg-amber-950/30 border border-amber-500/40 text-amber-200 text-sm space-y-3">
+                      <div className="flex items-center gap-2 font-medium text-amber-300">
+                        <Ban className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>Generation Stopped by User</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        The API request was cancelled before completion. System 1 (Jev) triage
+                        completed in{' '}
+                        <strong className="text-white font-mono">
+                          {msg.routing?.jeffLatencyMs || 0}ms
+                        </strong>
+                        {msg.routing?.selectedModelName && (
+                          <>
+                            {' '}
+                            and determined that{' '}
+                            <strong className="text-indigo-300 font-semibold">
+                              {msg.routing.selectedModelName}
+                            </strong>{' '}
+                            was the optimal System 2 model.
+                          </>
+                        )}
+                      </p>
+
+                      {/* Options to trigger models now */}
+                      {enabledModels.length > 0 && msg.userPrompt && (
+                        <div className="pt-2 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[11px] text-amber-300/80">
+                            Execute prompt with a model now:
+                          </span>
+                          <div className="flex items-center flex-wrap gap-1.5">
+                            {enabledModels.map((m) => (
+                              <button
+                                key={m.id}
+                                type="button"
+                                disabled={isProcessing}
+                                onClick={() => onForceEscalate(msg.id, m)}
+                                className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all cursor-pointer disabled:opacity-50 ${
+                                  msg.routing?.selectedModelId === m.id
+                                    ? 'bg-indigo-600 border-indigo-400 text-white shadow-sm'
+                                    : getTierBadgeStyle(m.tier) + ' hover:brightness-125'
+                                }`}
+                              >
+                                {msg.routing?.selectedModelId === m.id
+                                  ? `Call Recommended: ${m.name}`
+                                  : `Call ${m.name}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -587,7 +662,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
       {/* Bottom Prompt Input Bar */}
       <div className="p-4 sm:px-6 border-t border-slate-800/80 bg-slate-950/90 backdrop-blur-md">
         <form
-          onSubmit={handleSubmit}
+          onSubmit={(e) => handleSubmit(e)}
           className="relative flex items-end gap-2 rounded-2xl bg-slate-900 border border-slate-700/80 focus-within:border-indigo-500/80 focus-within:ring-2 focus-within:ring-indigo-500/20 px-4 py-3 shadow-lg transition-all"
         >
           <textarea
@@ -600,26 +675,61 @@ export const ChatView: React.FC<ChatViewProps> = ({
               e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
             }}
             onKeyDown={handleKeyDown}
-            placeholder={`Submit a prompt... ${config.jeff.displayName} (System 1) evaluates first and routes to System 2 (Gemini Flash / Argon) if needed`}
+            placeholder={
+              triageOnly
+                ? `System 1 Triage Mode active: Evaluates prompt with ${config.jeff.displayName} and displays chosen route without calling System 2`
+                : `Submit a prompt... ${config.jeff.displayName} (System 1) evaluates first and routes to System 2 (Gemini Flash / Argon) if needed`
+            }
             disabled={isProcessing}
             className="w-full bg-transparent text-sm sm:text-[15px] text-slate-100 placeholder-slate-500 focus:outline-none resize-none max-h-40 leading-relaxed"
           />
 
-          <button
-            type="submit"
-            disabled={!input.trim() || isProcessing}
-            className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium text-xs sm:text-sm transition-colors cursor-pointer disabled:cursor-not-allowed shadow-sm"
-          >
-            <span>Ask {config.jeff.displayName}</span>
-            <Send className="w-3.5 h-3.5" />
-          </button>
+          {isProcessing ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs sm:text-sm transition-colors cursor-pointer shadow-md animate-pulse"
+              title="Interrupt and cancel current API call"
+            >
+              <StopCircle className="w-4 h-4" />
+              <span>Cancel</span>
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium text-xs sm:text-sm transition-colors cursor-pointer disabled:cursor-not-allowed shadow-sm"
+            >
+              <span>{triageOnly ? 'Triage (Jev Only)' : `Ask ${config.jeff.displayName}`}</span>
+              <Send className="w-3.5 h-3.5" />
+            </button>
+          )}
         </form>
-        <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 px-1">
-          <span>
-            System 1 Policy:{' '}
-            <strong className="text-slate-400 capitalize">{config.jeff.sensitivity}</strong> (Noul
-            threshold ≥ {Math.round(config.jeff.noulSelfAnswerThreshold * 100)}%)
-          </span>
+
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 px-1">
+          <div className="flex items-center gap-3">
+            {/* System 1 Triage Only Toggle */}
+            <button
+              type="button"
+              onClick={() => setTriageOnly(!triageOnly)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
+                triageOnly
+                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-semibold shadow-sm'
+                  : 'bg-slate-900/80 border-slate-700/80 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+              }`}
+              title="When enabled, only runs System 1 (Jev) to inspect its decision, probability, and rubric score without calling System 2 LLMs"
+            >
+              <Split className="w-3.5 h-3.5" />
+              <span>System 1 (Jev) Triage Only: {triageOnly ? 'ON' : 'OFF'}</span>
+            </button>
+
+            <span>
+              Policy:{' '}
+              <strong className="text-slate-400 capitalize">{config.jeff.sensitivity}</strong> (Noul
+              threshold ≥ {Math.round(config.jeff.noulSelfAnswerThreshold * 100)}%)
+            </span>
+          </div>
+
           <span>Press Enter to send, Shift+Enter for new line</span>
         </div>
       </div>

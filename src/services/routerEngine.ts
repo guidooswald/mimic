@@ -2,6 +2,7 @@ import {
   AppConfig,
   ChatMessage,
   JevPrimitivesBreakdown,
+  PipelineOptions,
   ProviderType,
   RoutingDecision,
   SophisticatedModel,
@@ -55,7 +56,8 @@ async function callJevSystemOneDecisions(
   userPrompt: string,
   recentHistory: LLMMessage[],
   config: AppConfig,
-  enabledModels: SophisticatedModel[]
+  enabledModels: SophisticatedModel[],
+  signal?: AbortSignal
 ): Promise<JevPrimitivesBreakdown> {
   const provider = config.jeff.provider;
   const endpoint =
@@ -134,6 +136,7 @@ async function callJevSystemOneDecisions(
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
+    signal,
   });
 
   if (!response.ok) {
@@ -189,7 +192,8 @@ async function callGenerativeCompletion(
   modelId: string,
   messages: LLMMessage[],
   config: AppConfig,
-  temperature = 0.4
+  temperature = 0.4,
+  signal?: AbortSignal
 ): Promise<string> {
   if (provider === 'openrouter' || provider === 'typesafe') {
     const apiKey = config.credentials.openRouterApiKey.trim();
@@ -212,6 +216,7 @@ async function callGenerativeCompletion(
         messages,
         temperature,
       }),
+      signal,
     });
 
     if (!response.ok) {
@@ -249,6 +254,7 @@ async function callGenerativeCompletion(
           messages,
           temperature,
         }),
+        signal,
       }
     );
 
@@ -277,6 +283,7 @@ async function callGenerativeCompletion(
       messages,
       temperature,
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -296,7 +303,8 @@ async function runSimulatedJevPipeline(
   userPrompt: string,
   config: AppConfig,
   enabledModels: SophisticatedModel[],
-  onRoutingComplete: (decision: RoutingDecision) => void
+  onRoutingComplete: (decision: RoutingDecision) => void,
+  options?: PipelineOptions
 ): Promise<{
   decision: RoutingDecision;
   finalContent: string;
@@ -427,6 +435,29 @@ async function runSimulatedJevPipeline(
 
   onRoutingComplete(decision);
 
+  if (options?.triageOnly) {
+    const winProbPct = Math.round((choiceProbs[chosenModel.id] || 0.78) * 100);
+    const triageContent =
+      `### System 1 (Jev) Triage Complete — System 2 Paused\n\n` +
+      `**${config.jeff.displayName}** evaluated your prompt in **${jeffLatencyMs}ms** and recommended a System 2 model:\n\n` +
+      `- **Recommended Model**: **${chosenModel.name}** (\`${chosenModel.modelId}\`)\n` +
+      `- **System 2 Tier**: **${chosenModel.tier.toUpperCase()}**\n` +
+      `- **Choice Probability**: **${winProbPct}%** (Confidence: ${Math.round(primitives.choiceConfidence * 100)}%)\n` +
+      `- **Cognitive Load (\`score\`)**: \`${primitives.complexityScoreRaw.toFixed(2)} / 3.0\`\n` +
+      `- **Direct Resolution (\`noul\`)**: \`${primitives.answerAlreadyPresentNoul.toFixed(2)}\` (Needs deliberative generation)\n\n` +
+      `**Jev's Reasoning**: *${decision.reasoning}*\n\n` +
+      `---\n\n` +
+      `*System 2 was not called.* To execute this prompt using **${chosenModel.name}** or any other model, click a button below:`;
+
+    return {
+      decision,
+      finalContent: triageContent,
+      finalModelName: `${config.jeff.displayName} Triage`,
+      finalModelId: config.jeff.modelId,
+      finalModelTier: 'jeff',
+    };
+  }
+
   const escStart = performance.now();
   await new Promise((r) => setTimeout(r, isHardReasoning ? 900 : 550));
   const escalationLatencyMs = Math.round(performance.now() - escStart);
@@ -473,7 +504,8 @@ export async function executeJeffRoutingPipeline(
   userPrompt: string,
   history: ChatMessage[],
   config: AppConfig,
-  onRoutingComplete: (decision: RoutingDecision) => void
+  onRoutingComplete: (decision: RoutingDecision) => void,
+  options?: PipelineOptions
 ): Promise<{
   decision: RoutingDecision;
   finalContent: string;
@@ -487,7 +519,7 @@ export async function executeJeffRoutingPipeline(
 
   if (!jeffHasCreds) {
     if (config.credentials.useDemoModeWhenUnconfigured) {
-      return runSimulatedJevPipeline(userPrompt, config, enabledModels, onRoutingComplete);
+      return runSimulatedJevPipeline(userPrompt, config, enabledModels, onRoutingComplete, options);
     }
     throw new Error(
       `No API credentials configured for ${config.jeff.displayName} (${config.jeff.provider}). Please log into OpenRouter or configure your API key in Configuration.`
@@ -510,7 +542,8 @@ export async function executeJeffRoutingPipeline(
       userPrompt,
       recentContext,
       config,
-      enabledModels
+      enabledModels,
+      options?.signal
     );
     const jeffLatencyMs = Math.round(performance.now() - jeffStart);
 
@@ -610,6 +643,29 @@ export async function executeJeffRoutingPipeline(
 
     onRoutingComplete(decision);
 
+    // If caller requested System 1 triage only, return Jev's evaluation immediately without calling System 2
+    if (options?.triageOnly) {
+      const triageContent =
+        `### System 1 (Jev) Triage Complete — System 2 Paused\n\n` +
+        `**${config.jeff.displayName}** evaluated your prompt in **${jeffLatencyMs}ms** and recommended a System 2 model:\n\n` +
+        `- **Recommended Model**: **${targetModel.name}** (\`${targetModel.modelId}\`)\n` +
+        `- **System 2 Tier**: **${targetModel.tier.toUpperCase()}**\n` +
+        `- **Choice Probability**: **${winProbPercent}%** (Confidence: ${Math.round(primitives.choiceConfidence * 100)}%)\n` +
+        `- **Cognitive Load (\`score\`)**: \`${primitives.complexityScoreRaw.toFixed(2)} / 3.0\`\n` +
+        `- **Direct Resolution (\`noul\`)**: \`${primitives.answerAlreadyPresentNoul.toFixed(2)}\` (Needs deliberative generation)\n\n` +
+        `**Jev's Reasoning**: *${decision.reasoning}*\n\n` +
+        `---\n\n` +
+        `*System 2 was not called.* To execute this prompt using **${targetModel.name}** or any other model, click a button below:`;
+
+      return {
+        decision,
+        finalContent: triageContent,
+        finalModelName: `${config.jeff.displayName} Triage`,
+        finalModelId: config.jeff.modelId,
+        finalModelTier: 'jeff',
+      };
+    }
+
     const escStart = performance.now();
     const effectiveProvider = hasValidProviderCredentials(targetModel.provider, config)
       ? targetModel.provider
@@ -628,7 +684,8 @@ TypeSafe's Jev (System 1) triaged this prompt at cognitive score ${primitives.co
         { role: 'user', content: userPrompt },
       ],
       config,
-      0.5
+      0.5,
+      options?.signal
     );
 
     const escalationLatencyMs = Math.round(performance.now() - escStart);
@@ -656,7 +713,8 @@ TypeSafe's Jev (System 1) triaged this prompt at cognitive score ${primitives.co
       { role: 'user', content: userPrompt },
     ],
     config,
-    0.3
+    0.3,
+    options?.signal
   );
 
   const jeffLatencyMs = Math.round(performance.now() - jeffStart);
@@ -688,7 +746,8 @@ export async function forceCallSophisticatedModel(
   userPrompt: string,
   history: ChatMessage[],
   targetModel: SophisticatedModel,
-  config: AppConfig
+  config: AppConfig,
+  signal?: AbortSignal
 ): Promise<{
   content: string;
   latencyMs: number;
@@ -746,7 +805,8 @@ export async function forceCallSophisticatedModel(
       { role: 'user', content: userPrompt },
     ],
     config,
-    0.5
+    0.5,
+    signal
   );
 
   return {
