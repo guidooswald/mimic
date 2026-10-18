@@ -246,17 +246,26 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
             {/* Try Sample Prompts */}
             <div className="mt-7 w-full">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 text-left flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Test Jev&apos;s System 1 Primitives (noul / score / choice)</span>
+              <div className="flex items-center justify-between gap-2 mb-3 text-left">
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Test Jev&apos;s System 1 Primitives (noul / score / choice)</span>
+                </div>
+                {triageOnly && (
+                  <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Split className="w-3 h-3" />
+                    Triage Only Active (No System 2)
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-1 gap-2.5 text-left">
                 {SAMPLE_PROMPTS.map((item, idx) => (
                   <button
                     key={idx}
                     type="button"
-                    onClick={() => onSendPrompt(item.prompt)}
-                    className="group p-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-indigo-500/40 transition-all flex items-start justify-between gap-4 cursor-pointer text-left"
+                    disabled={isProcessing}
+                    onClick={() => onSendPrompt(item.prompt, triageOnly)}
+                    className="group p-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-indigo-500/40 transition-all flex items-start justify-between gap-4 cursor-pointer text-left disabled:opacity-50"
                   >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
