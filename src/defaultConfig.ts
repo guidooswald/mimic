@@ -107,9 +107,9 @@ export const DEFAULT_CONFIG: AppConfig = {
 
 export const SAMPLE_PROMPTS = [
   {
-    label: 'System 1 Resolution (Answer Already in Context / Fast Recall)',
-    prompt: 'What is the capital of Australia and why was it chosen over Sydney and Melbourne?',
-    expectedRoute: 'Jev System 1 (High Noul)',
+    label: 'System 1 Fast Verification (Served by Jev Alone)',
+    prompt: 'Is Canberra the capital city of Australia?',
+    expectedRoute: 'Jev System 1 (Zero System 2 Calls)',
     badgeColor: 'emerald',
   },
   {

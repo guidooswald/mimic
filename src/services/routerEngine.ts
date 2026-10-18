@@ -556,37 +556,27 @@ export async function executeJeffRoutingPipeline(
 
       onRoutingComplete(decision);
 
-      // Because Jev is non-autoregressive (0 output tokens), if OpenRouter key is available we can do a tiny fast recall or return the context summary
-      if (config.credentials.openRouterApiKey.trim()) {
-        const fastLiteReply = await callGenerativeCompletion(
-          'openrouter',
-          'google/gemini-2.0-flash-lite-001',
-          [
-            {
-              role: 'system',
-              content:
-                'You are the fast verbalizer for a Jev System 1 decision. Provide a concise, direct answer using the conversation context.',
-            },
-            ...recentContext,
-            { role: 'user', content: userPrompt },
-          ],
-          config,
-          0.2
-        );
-        return {
-          decision,
-          finalContent: fastLiteReply,
-          finalModelName: `${config.jeff.displayName} System 1 (${config.jeff.modelId})`,
-          finalModelId: config.jeff.modelId,
-          finalModelTier: 'jeff',
-        };
-      }
+      const isAffirmative = primitives.answerAlreadyPresentNoul >= 0.5;
+      const noulPct = Math.round(primitives.answerAlreadyPresentNoul * 100);
+      const confPct = Math.round(primitives.choiceConfidence * 100);
+
+      const systemOneContent =
+        `### System 1 Direct Resolution (${config.jeff.displayName})\n\n` +
+        `Served entirely by **${config.jeff.displayName}** in **${jeffLatencyMs}ms** without activating any System 2 LLM.\n\n` +
+        `- **Verification (\`noul\`)**: \`${primitives.answerAlreadyPresentNoul.toFixed(2)}\` (${noulPct}% probability)\n` +
+        `- **Cognitive Load (\`score\`)**: \`${primitives.complexityScoreRaw.toFixed(2)} / 3.0\`\n` +
+        `- **Selected Path (\`choice\`)**: \`${primitives.choiceWinner}\` (${confPct}% confidence)\n\n` +
+        `---\n\n` +
+        `**Verdict**: ${
+          isAffirmative
+            ? `✓ **YES / AFFIRMATIVE** (${noulPct}% confidence). Resolved directly by System 1 without needing generative reasoning.`
+            : `**Resolved by System 1** without invoking a slow System 2 model.`
+        }\n\n` +
+        `*(Need a deeper breakdown or explanation? Click any System 2 model pill below to generate one on demand.)*`;
 
       return {
         decision,
-        finalContent: `**System 1 Fast Resolution (${config.jeff.displayName}):**\n\nJev evaluated \`noul = ${primitives.answerAlreadyPresentNoul}\` (confidence \`${Math.round(
-          primitives.choiceConfidence * 100
-        )}%\`), indicating the answer is already present in context or requires no System 2 escalation.`,
+        finalContent: systemOneContent,
         finalModelName: `${config.jeff.displayName} System 1 (${config.jeff.modelId})`,
         finalModelId: config.jeff.modelId,
         finalModelTier: 'jeff',
