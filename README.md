@@ -85,9 +85,34 @@ Mimic supports calling **Jev** either via **OpenRouter’s Decisions API** (`POS
 
 ---
 
+## Visual Walkthrough
+
+### 1. Dual-Process Dashboard & Benchmark Prompts
+The start screen introduces the Kahneman dual-process architecture, displaying the active System 1 model (**TypeSafe Jev**) and configured System 2 models (**Gemini Flash**, **Gemini Argon**, **Claude 3.7 Sonnet**, **DeepSeek R1**) along with benchmark prompts to test Jev's `noul`, `score`, and `choice` primitives:
+
+![Mimic Dual-Process Start Screen](docs/screenshots/hero-start.png)
+
+---
+
+### 2. System 1 (Jev) Triage & Decision Telemetry
+When evaluating a prompt, Jev evaluates non-autoregressively in **~100–270ms**. In **Triage Only** mode, Mimic pauses execution before calling System 2, surfacing Jev's exact decision primitives, cognitive load rubric level, confidence scores, and recommended model:
+
+![System 1 Jev Triage](docs/screenshots/system1-triage.png)
+
+---
+
+### 3. Provider Configuration & Local Encrypted Key Vault
+API keys are never saved in plain text or browser `localStorage`. Mimic automatically writes keys to disk using **AES-256-GCM** encryption (`.secrets/credentials.enc.json`) and excludes all credentials from Git:
+
+![Provider Login & Local Encrypted Vault](docs/screenshots/configuration-vault.png)
+
+---
+
 ## Features in the Web UI
 
 - **Live System 1 Telemetry Card**: Every chat message displays Jev’s real-time `noul` percentage, `score` (`0.0–3.0`), and `choice` probability distribution across your System 2 roster.
+- **System 1 (Jev) Triage Only Mode**: Toggle `System 1 (Jev) Triage Only: [ON / OFF]` to evaluate prompts and inspect routing decisions without spending tokens on System 2 LLMs.
+- **Immediate Request Cancellation**: Interrupt any in-flight System 1 evaluation or System 2 generation with a single click.
 - **1-Click OpenRouter OAuth PKCE Login**: Authenticate directly with OpenRouter in the browser (or paste an OpenRouter / TypeSafe / Gemini API key) on the **Configuration & APIs** page.
 - **Local AES-256-GCM Encrypted API Key Vault**: API keys are never stored in browser `localStorage` or committed to Git. Instead, the local server encrypts your credentials with **AES-256-GCM** into `.secrets/credentials.enc.json` (paired with a local 256-bit key in `.secrets/.master.key`), and `.secrets/`, `*.enc*`, and `*.key` are strictly excluded via `.gitignore`.
 - **Customizable System 2 Roster**: Enable, disable, edit, or add models from the live OpenRouter catalog. Every model’s description is dynamically wired into Jev’s `choice` criteria.
