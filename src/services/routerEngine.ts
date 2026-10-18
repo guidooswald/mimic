@@ -229,7 +229,13 @@ async function callGenerativeCompletion(
       throw new Error('Google Gemini API key is not configured. Please add it in Configuration.');
     }
 
-    const cleanModelId = modelId.replace(/^google\//, '');
+    let cleanModelId = modelId.replace(/^google\//, '');
+    if (cleanModelId === 'gemini-2.5-flash') {
+      cleanModelId = 'gemini-3.8-flash';
+    }
+    if (cleanModelId === 'gemini-2.5-pro') {
+      cleanModelId = 'gemini-4-argon';
+    }
     const response = await fetch(
       'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
       {

@@ -44,7 +44,15 @@ function loadInitialNonSecretConfig(): AppConfig {
       jeff: { ...DEFAULT_CONFIG.jeff, ...parsed.jeff },
       sophisticatedModels:
         Array.isArray(parsed.sophisticatedModels) && parsed.sophisticatedModels.length > 0
-          ? parsed.sophisticatedModels
+          ? parsed.sophisticatedModels.map((m: SophisticatedModel) => {
+              if (m.modelId === 'google/gemini-2.5-flash' || m.modelId === 'gemini-2.5-flash') {
+                return { ...m, modelId: 'google/gemini-3.8-flash' };
+              }
+              if (m.modelId === 'google/gemini-2.5-pro' || m.modelId === 'gemini-2.5-pro') {
+                return { ...m, modelId: 'google/gemini-4-argon' };
+              }
+              return m;
+            })
           : DEFAULT_CONFIG.sophisticatedModels,
     };
   } catch {

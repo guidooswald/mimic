@@ -31,7 +31,7 @@ export const DEFAULT_SOPHISTICATED_MODELS: SophisticatedModel[] = [
   {
     id: 'gemini-flash',
     name: 'Gemini Flash',
-    modelId: 'google/gemini-2.5-flash',
+    modelId: 'google/gemini-3.8-flash',
     provider: 'openrouter',
     tier: 'flash',
     description:
@@ -44,7 +44,7 @@ export const DEFAULT_SOPHISTICATED_MODELS: SophisticatedModel[] = [
   {
     id: 'gemini-argon',
     name: 'Gemini Argon',
-    modelId: 'google/gemini-2.5-pro',
+    modelId: 'google/gemini-4-argon',
     provider: 'openrouter',
     tier: 'argon',
     description:

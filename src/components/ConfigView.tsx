@@ -810,7 +810,7 @@ export const ConfigView: React.FC<ConfigViewProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. google/gemini-2.5-pro"
+                  placeholder="e.g. google/gemini-3.8-flash"
                   value={newModel.modelId}
                   onChange={(e) => setNewModel({ ...newModel, modelId: e.target.value })}
                   className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-1.5 text-xs text-white font-mono"
