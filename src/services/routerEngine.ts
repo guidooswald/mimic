@@ -40,6 +40,11 @@ function isJevDecisionModel(modelId: string, provider: ProviderType): boolean {
   return provider === 'typesafe' || lower.includes('jev');
 }
 
+function cleanHeaderValue(val: string): string {
+  // Strip characters outside ISO-8859-1 (0-255) to satisfy browser fetch ByteString requirement
+  return val.replace(/[^\x00-\xFF]/g, '').trim();
+}
+
 /**
  * Calls TypeSafe's Jev System 1 Decision API using the native `state` + `questions`
  * (`noul`, `score`, `choice`) schema.
@@ -116,13 +121,13 @@ async function callJevSystemOneDecisions(
   };
 
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${apiKey}`,
+    Authorization: `Bearer ${cleanHeaderValue(apiKey)}`,
     'Content-Type': 'application/json',
   };
 
   if (provider === 'openrouter') {
     headers['HTTP-Referer'] = window.location.origin;
-    headers['X-Title'] = 'Mimic — Jev System 1 & System 2 Router';
+    headers['X-Title'] = 'Mimic - Jev System 1 and System 2 Router';
   }
 
   const response = await fetch(endpoint, {
@@ -197,10 +202,10 @@ async function callGenerativeCompletion(
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${cleanHeaderValue(apiKey)}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': window.location.origin,
-        'X-Title': 'Mimic — Jev System 1 & System 2 Router',
+        'X-Title': 'Mimic - Jev System 1 and System 2 Router',
       },
       body: JSON.stringify({
         model: modelId,
@@ -230,7 +235,7 @@ async function callGenerativeCompletion(
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${cleanHeaderValue(apiKey)}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -255,7 +260,7 @@ async function callGenerativeCompletion(
     'Content-Type': 'application/json',
   };
   if (config.credentials.customApiKey.trim()) {
-    headers.Authorization = `Bearer ${config.credentials.customApiKey.trim()}`;
+    headers.Authorization = `Bearer ${cleanHeaderValue(config.credentials.customApiKey)}`;
   }
 
   const response = await fetch(`${baseUrl}/chat/completions`, {

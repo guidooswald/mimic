@@ -101,7 +101,7 @@ export async function verifyOpenRouterApiKey(apiKey: string): Promise<OpenRouter
   const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
     method: 'GET',
     headers: {
-      Authorization: `Bearer ${apiKey.trim()}`,
+      Authorization: `Bearer ${apiKey.replace(/[^\x00-\xFF]/g, '').trim()}`,
     },
   });
 
