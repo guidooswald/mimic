@@ -361,13 +361,23 @@ export function App() {
 
       {/* Top Navigation Header */}
       <header className="px-4 sm:px-6 h-16 border-b border-slate-800/90 bg-slate-950/90 backdrop-blur-md flex items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-indigo-600 flex items-center justify-center shadow-md shadow-indigo-950/60">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('chat');
+            setMessages([]);
+          }}
+          className="flex items-center gap-3 text-left group cursor-pointer hover:opacity-90 transition-all focus:outline-none"
+          title="Back to start"
+        >
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-indigo-600 flex items-center justify-center shadow-md shadow-indigo-950/60 group-hover:scale-105 transition-transform">
             <Bot className="w-5 h-5 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-base tracking-tight text-white">Mimic</span>
+              <span className="font-bold text-base tracking-tight text-white group-hover:text-emerald-300 transition-colors">
+                Mimic
+              </span>
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-medium">
                 System 1 ({config.jeff.displayName}) + System 2 Router
               </span>
@@ -376,7 +386,7 @@ export function App() {
               Thinking, Fast and Slow: TypeSafe Jev (System 1) → Gemini Flash / Argon (System 2)
             </p>
           </div>
-        </div>
+        </button>
 
         {/* Session Routing Telemetry Pill */}
         {completedAssistantMsgs.length > 0 && (
