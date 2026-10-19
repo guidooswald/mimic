@@ -12,16 +12,66 @@ Mimic brings this exact dual-process cognitive architecture to AI systems by pai
 
 ## Cognitive Architecture: System 1 (`Jev`) vs. System 2 (`Gemini Flash / Argon`)
 
+![Mimic Cognitive Architecture Diagram](docs/screenshots/architecture-diagram.png)
+
+<details>
+<summary><strong>View Interactive Mermaid Source</strong></summary>
+
 ```mermaid
-flowchart LR
-    U["User Prompt + Conversation State"] --> S1["System 1: TypeSafe Jev\n(Fast Thinking • 70–300ms)"]
-    
-    S1 -->|"1. noul (Answer already there?)\n2. score (Cognitive load 0–3)\n3. choice (Model probabilities)"| D{"System 1 Decision"}
-    
-    D -->|"High noul / Low score\n(Answer already in state)"| R1["Immediate System 1 Resolution\n(Zero heavy LLM overhead)"]
-    D -->|"Moderate score (Level 2)\nchoice = gemini-flash"| S2A["System 2A: Gemini Flash\n(Fast Deliberative Synthesis)"]
-    D -->|"High score (Level 3)\nchoice = gemini-argon"| S2B["System 2B: Gemini Argon\n(Deep Slow Reasoning)"]
+flowchart TD
+    %% Styling Classes
+    classDef client fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#ffffff,font-weight:bold;
+    classDef sys1 fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ffffff,font-weight:bold;
+    classDef decision fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#ffffff;
+    classDef direct fill:#022c22,stroke:#34d399,stroke-width:2px,color:#a7f3d0;
+    classDef flash fill:#0c4a6e,stroke:#38bdf8,stroke-width:2px,color:#bae6fd;
+    classDef argon fill:#3b0764,stroke:#c084fc,stroke-width:2px,color:#f5d0fe;
+    classDef triage fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fef3c7;
+
+    User(["👤 User Prompt + Chat History"]):::client --> Jev
+
+    subgraph S1 ["🧠 SYSTEM 1: Fast, Non-Autoregressive Triage (~70–250ms)"]
+        direction TB
+        Jev["⚡ TypeSafe Jev (typesafe/jev-1.14)\noutput_tokens: 0"]:::sys1
+        
+        P_Noul["1️⃣ noul: Is answer already present? (0.00 – 1.00)"]
+        P_Score["2️⃣ score: Cognitive Load (Level 0 – 3)"]
+        P_Choice["3️⃣ choice: Route Probabilities Across System 2 Roster"]
+        
+        Jev --> P_Noul
+        Jev --> P_Score
+        Jev --> P_Choice
+    end
+
+    P_Noul & P_Score & P_Choice --> Evaluator{"Kahneman Policy Engine\nThreshold & Mode Check"}:::decision
+
+    Evaluator -->|"Triage Only Switch = ON"| TriageOut["📋 System 1 Triage Report\nSystem 2 Paused (0 tokens used)"]:::triage
+
+    Evaluator -->|"noul ≥ 0.65 OR score ≤ 1.0\n(Answer ready / trivial)"| DirectOut["🚀 System 1 Direct Resolution\nInstant answer served without LLM call"]:::direct
+
+    Evaluator -->|"noul < 0.65 AND score = Level 2\n(Moderate synthesis)"| S2_Flash
+    Evaluator -->|"noul < 0.65 AND score = Level 3\n(Deep deliberation)"| S2_Argon
+
+    subgraph S2 ["🔬 SYSTEM 2: Deliberative Generation & Deep Reasoning"]
+        direction LR
+        subgraph S2_Flash ["⚡ Tier A: Fast Deliberation"]
+            F1["Gemini 3.8 Flash"]:::flash
+            F2["DeepSeek V4.1 Flash"]:::flash
+        end
+        
+        subgraph S2_Argon ["💎 Tier B: Deep Slow Thinking"]
+            A1["Gemini 4 Argon"]:::argon
+            A2["Claude Sonnet 5.5"]:::argon
+            A3["DeepSeek R1 (0528)"]:::argon
+            A4["OpenAI o3 Pro"]:::argon
+        end
+    end
+
+    S2_Flash --> FinalResponse["💬 High-Quality Deliberative Response"]:::client
+    S2_Argon --> FinalResponse
 ```
+
+</details>
 
 ### 1. System 1 (Fast Thinking): **Jev** from TypeSafe AI
 Traditional Large Language Models are *autoregressive*—even if you only want them to classify a prompt or decide which model to call, they must generate text token-by-token, adding latency, cost, and brittle JSON parsing.
