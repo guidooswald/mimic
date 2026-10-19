@@ -99,30 +99,127 @@ function decryptCredentials(): {
 
 const MAX_VAULT_BODY_BYTES = 100 * 1024; // 100 KB limit for credentials payload
 
+const VAULT_PATH = '/api/local-vault';
+
+// Hostnames allowed to address the vault API. Anything else (e.g. a
+// DNS-rebound attacker domain resolving to 127.0.0.1) is rejected outright.
+const ALLOWED_VAULT_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+// Custom header required on mutating vault requests (POST/DELETE). Cross-origin
+// requests carrying a custom header always trigger a CORS preflight, which this
+// server never approves — so browsers cannot fire them from other origins.
+const VAULT_REQUEST_HEADER = 'x-mimic-vault';
+const VAULT_REQUEST_HEADER_VALUE = '1';
+
+interface ParsedHost {
+  hostname: string;
+  port: string;
+}
+
+function parseHostHeader(host: string | undefined): ParsedHost | null {
+  if (!host) return null;
+  const value = host.trim().toLowerCase();
+  if (!value) return null;
+
+  if (value.startsWith('[')) {
+    // IPv6 literal, e.g. [::1]:5173
+    const close = value.indexOf(']');
+    if (close === -1) return null;
+    const hostname = value.slice(0, close + 1);
+    const rest = value.slice(close + 1);
+    if (rest && !rest.startsWith(':')) return null;
+    const port = rest ? rest.slice(1) : '';
+    if (port && !/^\d+$/.test(port)) return null;
+    return { hostname, port };
+  }
+
+  const colon = value.lastIndexOf(':');
+  if (colon === -1) return { hostname: value, port: '' };
+  const hostname = value.slice(0, colon);
+  const port = value.slice(colon + 1);
+  // More than one colon without brackets is an unparseable (raw IPv6) host — reject.
+  if (hostname.includes(':')) return null;
+  if (port && !/^\d+$/.test(port)) return null;
+  return { hostname, port };
+}
+
+/**
+ * True only when the Origin is a well-formed http(s) URL that is exactly
+ * same-origin with the request's Host header (hostname *and* port must match).
+ * A page served from another localhost port does not qualify.
+ */
+function isSameOriginWithHost(origin: string, hostHeader: string): boolean {
+  try {
+    const originUrl = new URL(origin);
+    if (originUrl.protocol !== 'http:' && originUrl.protocol !== 'https:') return false;
+    return originUrl.host.toLowerCase() === hostHeader.trim().toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+function rejectRequest(res: ServerResponse, status: number, message: string): void {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify({ error: message }));
+}
+
 function createVaultMiddleware() {
   return (req: IncomingMessage, res: ServerResponse, next: () => void) => {
-    if (!req.url || !req.url.startsWith('/api/local-vault')) {
+    if (!req.url) return next();
+
+    let pathname = req.url;
+    try {
+      pathname = new URL(req.url, 'http://localhost').pathname;
+    } catch {
+      // fall back to the raw url; the strict equality below will reject it
+    }
+    if (pathname !== VAULT_PATH) {
       return next();
     }
 
-    // Security: Only allow requests originating from localhost / same-origin dev server
-    const host = req.headers.host || '';
-    const origin = (req.headers.origin as string) || '';
+    // Decrypted credentials must never be written to any cache.
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+
+    // Fix 1: validate the Host header unconditionally. A DNS-rebinding attack
+    // reaches this endpoint same-origin (so no Origin header is sent) — the
+    // Host check is what stops it.
+    const hostHeader = req.headers.host;
+    const parsedHost = parseHostHeader(hostHeader);
+    if (!parsedHost || !ALLOWED_VAULT_HOSTNAMES.has(parsedHost.hostname)) {
+      rejectRequest(res, 403, 'Access denied: vault API is only available on localhost');
+      return;
+    }
+
+    // Fix 3: when an Origin is present it must be *exactly* same-origin with
+    // the Host header (hostname and port), not merely "some localhost page".
+    const origin = req.headers.origin as string | undefined;
     if (origin) {
-      try {
-        const originUrl = new URL(origin);
-        if (originUrl.hostname !== 'localhost' && originUrl.hostname !== '127.0.0.1') {
-          res.statusCode = 403;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'Access denied: Cross-origin vault access forbidden' }));
-          return;
+      if (!isSameOriginWithHost(origin, hostHeader as string)) {
+        try {
+          new URL(origin);
+          rejectRequest(
+            res,
+            403,
+            'Access denied: Cross-origin vault access forbidden'
+          );
+        } catch {
+          rejectRequest(res, 400, 'Invalid origin header');
         }
-      } catch {
-        res.statusCode = 400;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: 'Invalid origin header' }));
         return;
       }
+    }
+
+    // Fix 2: mutating requests must carry the custom header, which forces a
+    // CORS preflight for any cross-site attempt (and preflights always fail
+    // here, since no Access-Control-Allow-* headers are ever emitted).
+    if (
+      (req.method === 'POST' || req.method === 'DELETE') &&
+      req.headers[VAULT_REQUEST_HEADER] !== VAULT_REQUEST_HEADER_VALUE
+    ) {
+      rejectRequest(res, 403, 'Access denied: missing vault request header');
+      return;
     }
 
     res.setHeader('Content-Type', 'application/json');

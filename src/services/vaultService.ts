@@ -1,5 +1,11 @@
 import { ProviderCredentials } from '../types';
 
+// Required by the vault middleware on mutating requests (POST/DELETE).
+// Custom headers force a CORS preflight on cross-origin requests, which the
+// dev server never approves — this blocks other origins from writing/deleting
+// the vault. Must match VAULT_REQUEST_HEADER in vite.config.ts.
+const VAULT_REQUEST_HEADERS = { 'X-Mimic-Vault': '1' } as const;
+
 export interface LocalVaultMetadata {
   exists: boolean;
   encryptedFilePath: string;
@@ -39,7 +45,7 @@ export async function saveEncryptedVaultCredentials(
 ): Promise<LocalVaultMetadata> {
   const response = await fetch('/api/local-vault', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...VAULT_REQUEST_HEADERS },
     body: JSON.stringify({ credentials }),
   });
 
@@ -58,5 +64,5 @@ export async function saveEncryptedVaultCredentials(
 }
 
 export async function clearEncryptedVaultCredentials(): Promise<void> {
-  await fetch('/api/local-vault', { method: 'DELETE' });
+  await fetch('/api/local-vault', { method: 'DELETE', headers: { ...VAULT_REQUEST_HEADERS } });
 }
