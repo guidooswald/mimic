@@ -6,7 +6,7 @@ In human cognition, Kahneman describes two distinct modes of thought:
 - **System 1 (Fast Thinking)**: Automatic, instantaneous, intuitive, and low-effort. It continuously assesses situations, recognizes patterns, answers familiar questions effortlessly, and decides when a problem is too hard and requires deeper concentration.
 - **System 2 (Slow Thinking)**: Deliberative, analytical, effortful, and step-by-step. It is called upon only when System 1 detects high cognitive complexity, novel coding challenges, or multi-step reasoning tasks.
 
-Mimic brings this exact dual-process cognitive architecture to AI systems by pairing **Jev from TypeSafe AI** as **System 1** with frontier autoregressive LLMs (**Gemini Flash**, **Gemini Argon**, **Claude**, **DeepSeek R1**) as **System 2**.
+Mimic brings this exact dual-process cognitive architecture to AI systems by pairing **Jev from TypeSafe AI** as **System 1** with frontier autoregressive LLMs (**Gemini Flash**, **Gemini Argon**, **Claude Sonnet 5.5**, **DeepSeek V4.1 Flash**, **DeepSeek R1**) as **System 2**.
 
 ---
 
@@ -39,8 +39,8 @@ Traditional Large Language Models are *autoregressive*—even if you only want t
 
 ### 2. System 2 (Slow Thinking): **Gemini Flash**, **Gemini Argon**, & Specialists
 When **Jev (System 1)** determines that a prompt requires deliberative generation (`noul` below threshold and `choice` pointing to a System 2 model), Mimic automatically dispatches the prompt to the winning **System 2** model:
-- **System 2A — Fast Deliberation (`Gemini Flash`)**: Invoked when Jev scores moderate complexity (*Level 2*). Handles everyday software engineering, React/TypeScript components, summarization, and structured explanations with high speed.
-- **System 2B — Deep Deliberation (`Gemini Argon / Pro`, `DeepSeek R1`, `Claude 3.7 Sonnet`)**: Invoked when Jev detects high cognitive load (*Level 3*). Allocates deep token-by-token reasoning for distributed systems architecture, mathematical derivations, and complex trade-off analysis.
+- **System 2A — Fast Deliberation (`Gemini Flash`, `DeepSeek V4.1 Flash`)**: Invoked when Jev scores moderate complexity (*Level 2*). Handles everyday software engineering, React/TypeScript components, summarization, and structured explanations with high speed and low cost.
+- **System 2B — Deep Deliberation (`Gemini Argon`, `Claude Sonnet 5.5`, `DeepSeek R1`, `OpenAI o3 Pro`)**: Invoked when Jev detects high cognitive load (*Level 3*). Allocates deep token-by-token reasoning for distributed systems architecture, mathematical derivations, and complex trade-off analysis.
 
 ---
 

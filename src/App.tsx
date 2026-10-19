@@ -51,6 +51,12 @@ function loadInitialNonSecretConfig(): AppConfig {
               if (m.modelId === 'google/gemini-2.5-pro' || m.modelId === 'gemini-2.5-pro') {
                 return { ...m, modelId: 'google/gemini-4-argon' };
               }
+              if (m.modelId === 'anthropic/claude-3.7-sonnet' || m.modelId === 'anthropic/claude-3-5-sonnet') {
+                return { ...m, name: 'Claude Sonnet 5.5', modelId: 'anthropic/claude-sonnet-5.5' };
+              }
+              if (m.modelId === 'deepseek/deepseek-r1') {
+                return { ...m, name: 'DeepSeek R1 (0528)', modelId: 'deepseek/deepseek-r1-0528' };
+              }
               return m;
             })
           : DEFAULT_CONFIG.sophisticatedModels,
