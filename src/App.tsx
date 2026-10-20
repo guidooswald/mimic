@@ -6,8 +6,9 @@ import {
   CheckCircle2,
   Activity,
   Lock,
+  Coins,
 } from 'lucide-react';
-import { AppConfig, ChatMessage, SophisticatedModel } from './types';
+import { AppConfig, ChatMessage, CostBreakdown, SophisticatedModel } from './types';
 import { DEFAULT_CONFIG } from './defaultConfig';
 import { ChatView } from './components/ChatView';
 import { ConfigView } from './components/ConfigView';
@@ -15,6 +16,7 @@ import { checkAndExchangeOpenRouterOAuthCode } from './services/openrouterAuth';
 import {
   executeJeffRoutingPipeline,
   forceCallSophisticatedModel,
+  formatCost,
 } from './services/routerEngine';
 import {
   loadEncryptedVaultCredentials,
@@ -268,6 +270,7 @@ export function App() {
                 escalationLatencyMs: result.escalationLatencyMs,
                 totalLatencyMs,
                 isTriageOnly: triageOnly,
+                cost: result.cost,
               }
             : m
         )
@@ -349,6 +352,19 @@ export function App() {
         controller.signal
       );
 
+      const s1Cost = targetMsg.cost?.system1Cost ?? targetMsg.routing?.system1Cost ?? 0;
+      const s1Tokens = targetMsg.cost?.system1Tokens ?? targetMsg.routing?.system1Tokens;
+      const combinedCost: CostBreakdown | undefined = res.cost
+        ? {
+            system1Cost: s1Cost,
+            system2Cost: res.cost.system2Cost,
+            totalCost: Number((s1Cost + res.cost.system2Cost).toFixed(7)),
+            system1Tokens: s1Tokens,
+            system2Tokens: res.cost.system2Tokens,
+            isEstimated: res.cost.isEstimated,
+          }
+        : targetMsg.cost;
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === messageId
@@ -361,6 +377,7 @@ export function App() {
                 finalModelTier: targetModel.tier,
                 escalationLatencyMs: res.latencyMs,
                 totalLatencyMs: (m.routing?.jeffLatencyMs || 0) + res.latencyMs,
+                cost: combinedCost,
               }
             : m
         )
@@ -406,6 +423,18 @@ export function App() {
     (m) => m.finalModelTier === 'jeff'
   ).length;
   const escalatedCount = completedAssistantMsgs.length - directByJeffCount;
+
+  const totalSessionCost = completedAssistantMsgs.reduce(
+    (sum, m) => sum + (m.cost?.totalCost || 0),
+    0
+  );
+  const estimatedSavings = completedAssistantMsgs.reduce((sum, m) => {
+    if (m.finalModelTier === 'jeff' || m.isTriageOnly) {
+      const saved = Math.max(0, 0.0045 - (m.cost?.system1Cost || 0.000012));
+      return sum + saved;
+    }
+    return sum;
+  }, 0);
 
   const isConnected = Boolean(
     config.credentials.openRouterApiKey.trim() ||
@@ -465,6 +494,19 @@ export function App() {
             <span className="text-slate-600">•</span>
             <span className="text-violet-300 font-medium">
               {escalatedCount} System 2 (Flash / Argon)
+            </span>
+            <span className="text-slate-600">•</span>
+            <span
+              className="text-amber-300 font-mono font-medium flex items-center gap-1.5"
+              title={`Total session cost: ${formatCost(totalSessionCost)}. Estimated saved via System 1 triage / direct resolution: ~${formatCost(estimatedSavings)}.`}
+            >
+              <Coins className="w-3.5 h-3.5 text-amber-400" />
+              <span>Cost: {formatCost(totalSessionCost)}</span>
+              {estimatedSavings > 0 && (
+                <span className="text-emerald-400 font-normal text-[11px]">
+                  (Saved ~{formatCost(estimatedSavings)})
+                </span>
+              )}
             </span>
           </div>
         )}

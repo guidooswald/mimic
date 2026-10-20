@@ -1,6 +1,7 @@
 import {
   AppConfig,
   ChatMessage,
+  CostBreakdown,
   JevPrimitivesBreakdown,
   PipelineOptions,
   ProviderType,
@@ -13,12 +14,108 @@ interface LLMMessage {
   content: string;
 }
 
+export interface ModelPricingRate {
+  promptPerMillion: number;
+  completionPerMillion: number;
+}
+
+export const KNOWN_MODEL_RATES: Record<string, ModelPricingRate> = {
+  // Jev System 1
+  'typesafe/jev-1.14': { promptPerMillion: 0.035, completionPerMillion: 0.035 },
+  'typesafe/jev-1.13': { promptPerMillion: 0.035, completionPerMillion: 0.035 },
+  'jev-latest': { promptPerMillion: 0.035, completionPerMillion: 0.035 },
+  // Gemini
+  'google/gemini-3.8-flash': { promptPerMillion: 0.825, completionPerMillion: 4.125 },
+  'gemini-3.8-flash': { promptPerMillion: 0.825, completionPerMillion: 4.125 },
+  'google/gemini-2.5-flash': { promptPerMillion: 0.075, completionPerMillion: 0.30 },
+  'gemini-2.5-flash': { promptPerMillion: 0.075, completionPerMillion: 0.30 },
+  'google/gemini-2.0-flash-lite-001': { promptPerMillion: 0.075, completionPerMillion: 0.30 },
+  'google/gemini-4-argon': { promptPerMillion: 2.00, completionPerMillion: 10.00 },
+  'gemini-4-argon': { promptPerMillion: 2.00, completionPerMillion: 10.00 },
+  'google/gemini-2.5-pro': { promptPerMillion: 1.25, completionPerMillion: 5.00 },
+  'gemini-2.5-pro': { promptPerMillion: 1.25, completionPerMillion: 5.00 },
+  // Claude
+  'anthropic/claude-sonnet-5.5': { promptPerMillion: 3.00, completionPerMillion: 15.00 },
+  'anthropic/claude-3.7-sonnet': { promptPerMillion: 3.00, completionPerMillion: 15.00 },
+  'anthropic/claude-3-5-sonnet': { promptPerMillion: 3.00, completionPerMillion: 15.00 },
+  // DeepSeek
+  'deepseek/deepseek-v4.1-flash': { promptPerMillion: 0.0355, completionPerMillion: 0.12 },
+  'deepseek/deepseek-r1-0528': { promptPerMillion: 0.50, completionPerMillion: 2.15 },
+  'deepseek/deepseek-r1': { promptPerMillion: 0.55, completionPerMillion: 2.19 },
+  // OpenAI
+  'openai/gpt-6.1-sol': { promptPerMillion: 2.00, completionPerMillion: 10.00 },
+  'openai/gpt-4o': { promptPerMillion: 2.50, completionPerMillion: 10.00 },
+  'openai/gpt-4o-mini': { promptPerMillion: 0.15, completionPerMillion: 0.60 },
+  'openai/o3-pro': { promptPerMillion: 20.00, completionPerMillion: 80.00 },
+  'openai/o3-mini': { promptPerMillion: 1.10, completionPerMillion: 4.40 },
+};
+
+export function estimateModelCost(
+  modelId: string,
+  promptTokens: number,
+  completionTokens: number
+): number {
+  const cleanId = modelId.toLowerCase().trim();
+  const rate =
+    KNOWN_MODEL_RATES[cleanId] ||
+    KNOWN_MODEL_RATES[modelId] ||
+    (cleanId.includes('flash') || cleanId.includes('lite') || cleanId.includes('mini')
+      ? { promptPerMillion: 0.20, completionPerMillion: 0.80 }
+      : cleanId.includes('pro') || cleanId.includes('argon') || cleanId.includes('sonnet')
+      ? { promptPerMillion: 2.50, completionPerMillion: 10.00 }
+      : { promptPerMillion: 1.00, completionPerMillion: 4.00 });
+
+  const pCost = (promptTokens * rate.promptPerMillion) / 1_000_000;
+  const cCost = (completionTokens * rate.completionPerMillion) / 1_000_000;
+  return Number((pCost + cCost).toFixed(7));
+}
+
+export function formatCost(cost: number | undefined | null): string {
+  if (cost === undefined || cost === null || isNaN(cost)) return '$0.00';
+  if (cost === 0) return '$0.00';
+  if (cost < 0.0001) {
+    return `$${cost.toFixed(6)}`;
+  }
+  if (cost < 0.01) {
+    return `$${cost.toFixed(5)}`;
+  }
+  if (cost < 0.1) {
+    return `$${cost.toFixed(4)}`;
+  }
+  if (cost < 1.0) {
+    return `$${cost.toFixed(3)}`;
+  }
+  return `$${cost.toFixed(2)}`;
+}
+
 const COMPLEXITY_LEGEND: Record<string, string> = {
   '0': 'Level 0: Answer already in context / trivial System 1 recall',
   '1': 'Level 1: Simple factual lookup or concise definition',
   '2': 'Level 2: Moderate System 2 (Flash) — coding, drafting, structured explanation',
   '3': 'Level 3: Deep System 2 (Argon) — complex architecture, math, multi-step reasoning',
 };
+
+interface JevDecisionResult {
+  primitives: JevPrimitivesBreakdown;
+  cost: number;
+  tokens: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  isEstimated: boolean;
+}
+
+interface GenerativeCompletionResult {
+  content: string;
+  cost: number;
+  tokens: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  isEstimated: boolean;
+}
 
 function hasValidProviderCredentials(provider: ProviderType, config: AppConfig): boolean {
   if (provider === 'openrouter') {
@@ -58,7 +155,7 @@ async function callJevSystemOneDecisions(
   config: AppConfig,
   enabledModels: SophisticatedModel[],
   signal?: AbortSignal
-): Promise<JevPrimitivesBreakdown> {
+): Promise<JevDecisionResult> {
   const provider = config.jeff.provider;
   const endpoint =
     provider === 'typesafe'
@@ -172,15 +269,52 @@ async function callJevSystemOneDecisions(
   const choiceConf = typeof choiceObj.confidence === 'number' ? choiceObj.confidence : 0.8;
   const choiceProbs = choiceObj.probabilities || { [choiceWinner]: choiceConf };
 
+  const usage = data?.usage || {};
+  const promptTokens =
+    typeof usage.input_tokens === 'number'
+      ? usage.input_tokens
+      : typeof usage.prompt_tokens === 'number'
+      ? usage.prompt_tokens
+      : Math.round(userPrompt.length / 4) + 180;
+  const completionTokens =
+    typeof usage.output_tokens === 'number'
+      ? usage.output_tokens
+      : typeof usage.completion_tokens === 'number'
+      ? usage.completion_tokens
+      : 24;
+  const totalTokens =
+    typeof usage.total_tokens === 'number'
+      ? usage.total_tokens
+      : promptTokens + completionTokens;
+
+  let cost: number;
+  let isEstimated = false;
+
+  if (typeof usage.cost === 'number') {
+    cost = usage.cost;
+  } else {
+    cost = estimateModelCost(config.jeff.modelId, promptTokens, completionTokens);
+    isEstimated = true;
+  }
+
   return {
-    answerAlreadyPresentNoul: Number(noulVal.toFixed(3)),
-    complexityScoreRaw: Number(rawScore.toFixed(2)),
-    complexityConfidence: Number(scoreConf.toFixed(2)),
-    complexityLegend: scoreObj.legend || COMPLEXITY_LEGEND,
-    complexityProbabilities: scoreProbs,
-    choiceWinner,
-    choiceConfidence: Number(choiceConf.toFixed(2)),
-    choiceProbabilities: choiceProbs,
+    primitives: {
+      answerAlreadyPresentNoul: Number(noulVal.toFixed(3)),
+      complexityScoreRaw: Number(rawScore.toFixed(2)),
+      complexityConfidence: Number(scoreConf.toFixed(2)),
+      complexityLegend: scoreObj.legend || COMPLEXITY_LEGEND,
+      complexityProbabilities: scoreProbs,
+      choiceWinner,
+      choiceConfidence: Number(choiceConf.toFixed(2)),
+      choiceProbabilities: choiceProbs,
+    },
+    cost,
+    tokens: {
+      promptTokens,
+      completionTokens,
+      totalTokens,
+    },
+    isEstimated,
   };
 }
 
@@ -194,7 +328,7 @@ async function callGenerativeCompletion(
   config: AppConfig,
   temperature = 0.4,
   signal?: AbortSignal
-): Promise<string> {
+): Promise<GenerativeCompletionResult> {
   if (provider === 'openrouter' || provider === 'typesafe') {
     const apiKey = config.credentials.openRouterApiKey.trim();
     if (!apiKey) {
@@ -225,7 +359,36 @@ async function callGenerativeCompletion(
     }
 
     const data = await response.json();
-    return data?.choices?.[0]?.message?.content || '';
+    const content = data?.choices?.[0]?.message?.content || '';
+    const usage = data?.usage;
+    const promptTokens =
+      typeof usage?.prompt_tokens === 'number'
+        ? usage.prompt_tokens
+        : Math.round(messages.reduce((acc, m) => acc + m.content.length, 0) / 4);
+    const completionTokens =
+      typeof usage?.completion_tokens === 'number'
+        ? usage.completion_tokens
+        : Math.max(1, Math.round(content.length / 4));
+    const totalTokens =
+      typeof usage?.total_tokens === 'number'
+        ? usage.total_tokens
+        : promptTokens + completionTokens;
+
+    let cost: number;
+    let isEstimated = false;
+    if (typeof usage?.cost === 'number') {
+      cost = usage.cost;
+    } else {
+      cost = estimateModelCost(modelId, promptTokens, completionTokens);
+      isEstimated = true;
+    }
+
+    return {
+      content,
+      cost,
+      tokens: { promptTokens, completionTokens, totalTokens },
+      isEstimated,
+    };
   }
 
   if (provider === 'gemini') {
@@ -264,7 +427,29 @@ async function callGenerativeCompletion(
     }
 
     const data = await response.json();
-    return data?.choices?.[0]?.message?.content || '';
+    const content = data?.choices?.[0]?.message?.content || '';
+    const usage = data?.usage;
+    const promptTokens =
+      typeof usage?.prompt_tokens === 'number'
+        ? usage.prompt_tokens
+        : Math.round(messages.reduce((acc, m) => acc + m.content.length, 0) / 4);
+    const completionTokens =
+      typeof usage?.completion_tokens === 'number'
+        ? usage.completion_tokens
+        : Math.max(1, Math.round(content.length / 4));
+    const totalTokens =
+      typeof usage?.total_tokens === 'number'
+        ? usage.total_tokens
+        : promptTokens + completionTokens;
+
+    const cost = estimateModelCost(cleanModelId, promptTokens, completionTokens);
+
+    return {
+      content,
+      cost,
+      tokens: { promptTokens, completionTokens, totalTokens },
+      isEstimated: true,
+    };
   }
 
   const rawCustomUrl = config.credentials.customEndpointUrl.trim();
@@ -308,7 +493,36 @@ async function callGenerativeCompletion(
   }
 
   const data = await response.json();
-  return data?.choices?.[0]?.message?.content || '';
+  const content = data?.choices?.[0]?.message?.content || '';
+  const usage = data?.usage;
+  const promptTokens =
+    typeof usage?.prompt_tokens === 'number'
+      ? usage.prompt_tokens
+      : Math.round(messages.reduce((acc, m) => acc + m.content.length, 0) / 4);
+  const completionTokens =
+    typeof usage?.completion_tokens === 'number'
+      ? usage.completion_tokens
+      : Math.max(1, Math.round(content.length / 4));
+  const totalTokens =
+    typeof usage?.total_tokens === 'number'
+      ? usage.total_tokens
+      : promptTokens + completionTokens;
+
+  let cost: number;
+  let isEstimated = false;
+  if (typeof usage?.cost === 'number') {
+    cost = usage.cost;
+  } else {
+    cost = estimateModelCost(modelId, promptTokens, completionTokens);
+    isEstimated = true;
+  }
+
+  return {
+    content,
+    cost,
+    tokens: { promptTokens, completionTokens, totalTokens },
+    isEstimated,
+  };
 }
 
 /**
@@ -328,6 +542,7 @@ async function runSimulatedJevPipeline(
   finalModelId: string;
   finalModelTier: 'jeff' | 'flash' | 'argon' | 'specialist';
   escalationLatencyMs?: number;
+  cost: CostBreakdown;
 }> {
   const start = performance.now();
   // Jev System 1 latency is typically 90-220ms!
@@ -405,6 +620,10 @@ async function runSimulatedJevPipeline(
   };
 
   const jeffLatencyMs = Math.round(performance.now() - start);
+  const s1PromptTokens = Math.max(90, Math.round(userPrompt.length / 3) + 130);
+  const s1OutputTokens = 23;
+  const s1TotalTokens = s1PromptTokens + s1OutputTokens;
+  const s1Cost = 0.0000119; // Jev decision typical rate on OpenRouter
 
   if (isSystemOneResolved || !chosenModel) {
     const decision: RoutingDecision = {
@@ -418,9 +637,23 @@ async function runSimulatedJevPipeline(
       jeffLatencyMs,
       usedDemoSimulation: true,
       jevPrimitives: primitives,
+      system1Cost: s1Cost,
+      system1Tokens: {
+        promptTokens: s1PromptTokens,
+        completionTokens: s1OutputTokens,
+        totalTokens: s1TotalTokens,
+      },
     };
 
     onRoutingComplete(decision);
+
+    const cost: CostBreakdown = {
+      system1Cost: s1Cost,
+      system2Cost: 0,
+      totalCost: s1Cost,
+      system1Tokens: decision.system1Tokens,
+      isEstimated: true,
+    };
 
     return {
       decision,
@@ -428,6 +661,7 @@ async function runSimulatedJevPipeline(
       finalModelName: `${config.jeff.displayName} System 1 (${config.jeff.modelId})`,
       finalModelId: config.jeff.modelId,
       finalModelTier: 'jeff',
+      cost,
     };
   }
 
@@ -447,12 +681,21 @@ async function runSimulatedJevPipeline(
     jeffLatencyMs,
     usedDemoSimulation: true,
     jevPrimitives: primitives,
+    system1Cost: s1Cost,
+    system1Tokens: {
+      promptTokens: s1PromptTokens,
+      completionTokens: s1OutputTokens,
+      totalTokens: s1TotalTokens,
+    },
   };
 
   onRoutingComplete(decision);
 
   if (options?.triageOnly) {
     const winProbPct = Math.round((choiceProbs[chosenModel.id] || 0.78) * 100);
+    const estS2Tokens = isHardReasoning ? 620 : 340;
+    const estS2Cost = estimateModelCost(chosenModel.modelId, s1PromptTokens + 40, estS2Tokens);
+
     const triageContent =
       `### System 1 (Jev) Triage Complete — System 2 Paused\n\n` +
       `**${config.jeff.displayName}** evaluated your prompt in **${jeffLatencyMs}ms** and recommended a System 2 model:\n\n` +
@@ -460,10 +703,20 @@ async function runSimulatedJevPipeline(
       `- **System 2 Tier**: **${chosenModel.tier.toUpperCase()}**\n` +
       `- **Choice Probability**: **${winProbPct}%** (Confidence: ${Math.round(primitives.choiceConfidence * 100)}%)\n` +
       `- **Cognitive Load (\`score\`)**: \`${primitives.complexityScoreRaw.toFixed(2)} / 3.0\`\n` +
-      `- **Direct Resolution (\`noul\`)**: \`${primitives.answerAlreadyPresentNoul.toFixed(2)}\` (Needs deliberative generation)\n\n` +
+      `- **Direct Resolution (\`noul\`)**: \`${primitives.answerAlreadyPresentNoul.toFixed(2)}\` (Needs deliberative generation)\n` +
+      `- **System 1 Triage Cost**: \`${formatCost(s1Cost)}\` (Saved ~${formatCost(estS2Cost)} by pausing System 2)\n` +
+      `- **Estimated System 2 Cost If Run**: \`${formatCost(estS2Cost)}\` (~${s1PromptTokens + 40} in / ${estS2Tokens} out tokens)\n\n` +
       `**Jev's Reasoning**: *${decision.reasoning}*\n\n` +
       `---\n\n` +
       `*System 2 was not called.* To execute this prompt using **${chosenModel.name}** or any other model, click a button below:`;
+
+    const cost: CostBreakdown = {
+      system1Cost: s1Cost,
+      system2Cost: 0,
+      totalCost: s1Cost,
+      system1Tokens: decision.system1Tokens,
+      isEstimated: true,
+    };
 
     return {
       decision,
@@ -471,12 +724,30 @@ async function runSimulatedJevPipeline(
       finalModelName: `${config.jeff.displayName} Triage`,
       finalModelId: config.jeff.modelId,
       finalModelTier: 'jeff',
+      cost,
     };
   }
 
   const escStart = performance.now();
   await new Promise((r) => setTimeout(r, isHardReasoning ? 900 : 550));
   const escalationLatencyMs = Math.round(performance.now() - escStart);
+
+  const s2PromptTokens = s1PromptTokens + 45;
+  const s2OutputTokens = isHardReasoning ? 590 : 310;
+  const s2Cost = estimateModelCost(chosenModel.modelId, s2PromptTokens, s2OutputTokens);
+
+  const cost: CostBreakdown = {
+    system1Cost: s1Cost,
+    system2Cost: s2Cost,
+    totalCost: Number((s1Cost + s2Cost).toFixed(7)),
+    system1Tokens: decision.system1Tokens,
+    system2Tokens: {
+      promptTokens: s2PromptTokens,
+      completionTokens: s2OutputTokens,
+      totalTokens: s2PromptTokens + s2OutputTokens,
+    },
+    isEstimated: true,
+  };
 
   return {
     decision,
@@ -485,6 +756,7 @@ async function runSimulatedJevPipeline(
     finalModelId: chosenModel.modelId,
     finalModelTier: chosenModel.tier,
     escalationLatencyMs,
+    cost,
   };
 }
 
@@ -529,6 +801,7 @@ export async function executeJeffRoutingPipeline(
   finalModelId: string;
   finalModelTier: 'jeff' | 'flash' | 'argon' | 'specialist';
   escalationLatencyMs?: number;
+  cost: CostBreakdown;
 }> {
   const enabledModels = config.sophisticatedModels.filter((m) => m.enabled);
   const jeffHasCreds = hasValidProviderCredentials(config.jeff.provider, config);
@@ -554,13 +827,14 @@ export async function executeJeffRoutingPipeline(
 
   // Check if using TypeSafe Jev System 1 Decisions model (`typesafe/jev-*` or `jev-*`)
   if (isJevDecisionModel(config.jeff.modelId, config.jeff.provider)) {
-    const primitives = await callJevSystemOneDecisions(
+    const jevResult = await callJevSystemOneDecisions(
       userPrompt,
       recentContext,
       config,
       enabledModels,
       options?.signal
     );
+    const primitives = jevResult.primitives;
     const jeffLatencyMs = Math.round(performance.now() - jeffStart);
 
     const normalizedComplexity10 = Math.min(
@@ -601,6 +875,8 @@ export async function executeJeffRoutingPipeline(
         selectedModelTier: 'jeff',
         jeffLatencyMs,
         jevPrimitives: primitives,
+        system1Cost: jevResult.cost,
+        system1Tokens: jevResult.tokens,
       };
 
       onRoutingComplete(decision);
@@ -614,7 +890,8 @@ export async function executeJeffRoutingPipeline(
         `Served entirely by **${config.jeff.displayName}** in **${jeffLatencyMs}ms** without activating any System 2 LLM.\n\n` +
         `- **Verification (\`noul\`)**: \`${primitives.answerAlreadyPresentNoul.toFixed(2)}\` (${noulPct}% probability)\n` +
         `- **Cognitive Load (\`score\`)**: \`${primitives.complexityScoreRaw.toFixed(2)} / 3.0\`\n` +
-        `- **Selected Path (\`choice\`)**: \`${primitives.choiceWinner}\` (${confPct}% confidence)\n\n` +
+        `- **Selected Path (\`choice\`)**: \`${primitives.choiceWinner}\` (${confPct}% confidence)\n` +
+        `- **System 1 Cost**: \`${formatCost(jevResult.cost)}\` (${jevResult.tokens.promptTokens} in / ${jevResult.tokens.completionTokens} out tokens)\n\n` +
         `---\n\n` +
         `**Verdict**: ${
           isAffirmative
@@ -623,12 +900,21 @@ export async function executeJeffRoutingPipeline(
         }\n\n` +
         `*(Need a deeper breakdown or explanation? Click any System 2 model pill below to generate one on demand.)*`;
 
+      const cost: CostBreakdown = {
+        system1Cost: jevResult.cost,
+        system2Cost: 0,
+        totalCost: jevResult.cost,
+        system1Tokens: jevResult.tokens,
+        isEstimated: jevResult.isEstimated,
+      };
+
       return {
         decision,
         finalContent: systemOneContent,
         finalModelName: `${config.jeff.displayName} System 1 (${config.jeff.modelId})`,
         finalModelId: config.jeff.modelId,
         finalModelTier: 'jeff',
+        cost,
       };
     }
 
@@ -655,12 +941,21 @@ export async function executeJeffRoutingPipeline(
       selectedModelTier: targetModel.tier,
       jeffLatencyMs,
       jevPrimitives: primitives,
+      system1Cost: jevResult.cost,
+      system1Tokens: jevResult.tokens,
     };
 
     onRoutingComplete(decision);
 
     // If caller requested System 1 triage only, return Jev's evaluation immediately without calling System 2
     if (options?.triageOnly) {
+      const estS2Tokens = targetModel.tier === 'argon' ? 600 : 350;
+      const estS2Cost = estimateModelCost(
+        targetModel.modelId,
+        (jevResult.tokens.promptTokens || 200) + 40,
+        estS2Tokens
+      );
+
       const triageContent =
         `### System 1 (Jev) Triage Complete — System 2 Paused\n\n` +
         `**${config.jeff.displayName}** evaluated your prompt in **${jeffLatencyMs}ms** and recommended a System 2 model:\n\n` +
@@ -668,10 +963,20 @@ export async function executeJeffRoutingPipeline(
         `- **System 2 Tier**: **${targetModel.tier.toUpperCase()}**\n` +
         `- **Choice Probability**: **${winProbPercent}%** (Confidence: ${Math.round(primitives.choiceConfidence * 100)}%)\n` +
         `- **Cognitive Load (\`score\`)**: \`${primitives.complexityScoreRaw.toFixed(2)} / 3.0\`\n` +
-        `- **Direct Resolution (\`noul\`)**: \`${primitives.answerAlreadyPresentNoul.toFixed(2)}\` (Needs deliberative generation)\n\n` +
+        `- **Direct Resolution (\`noul\`)**: \`${primitives.answerAlreadyPresentNoul.toFixed(2)}\` (Needs deliberative generation)\n` +
+        `- **System 1 Triage Cost**: \`${formatCost(jevResult.cost)}\` (Saved ~${formatCost(estS2Cost)} by pausing System 2)\n` +
+        `- **Estimated System 2 Cost If Run**: \`${formatCost(estS2Cost)}\` (\`${targetModel.name}\`)\n\n` +
         `**Jev's Reasoning**: *${decision.reasoning}*\n\n` +
         `---\n\n` +
         `*System 2 was not called.* To execute this prompt using **${targetModel.name}** or any other model, click a button below:`;
+
+      const cost: CostBreakdown = {
+        system1Cost: jevResult.cost,
+        system2Cost: 0,
+        totalCost: jevResult.cost,
+        system1Tokens: jevResult.tokens,
+        isEstimated: jevResult.isEstimated,
+      };
 
       return {
         decision,
@@ -679,6 +984,7 @@ export async function executeJeffRoutingPipeline(
         finalModelName: `${config.jeff.displayName} Triage`,
         finalModelId: config.jeff.modelId,
         finalModelTier: 'jeff',
+        cost,
       };
     }
 
@@ -687,7 +993,7 @@ export async function executeJeffRoutingPipeline(
       ? targetModel.provider
       : 'openrouter';
 
-    const finalContent = await callGenerativeCompletion(
+    const completionResult = await callGenerativeCompletion(
       effectiveProvider,
       targetModel.modelId,
       [
@@ -706,18 +1012,28 @@ TypeSafe's Jev (System 1) triaged this prompt at cognitive score ${primitives.co
 
     const escalationLatencyMs = Math.round(performance.now() - escStart);
 
+    const cost: CostBreakdown = {
+      system1Cost: jevResult.cost,
+      system2Cost: completionResult.cost,
+      totalCost: Number((jevResult.cost + completionResult.cost).toFixed(7)),
+      system1Tokens: jevResult.tokens,
+      system2Tokens: completionResult.tokens,
+      isEstimated: jevResult.isEstimated || completionResult.isEstimated,
+    };
+
     return {
       decision,
-      finalContent,
+      finalContent: completionResult.content,
       finalModelName: targetModel.name,
       finalModelId: targetModel.modelId,
       finalModelTier: targetModel.tier,
       escalationLatencyMs,
+      cost,
     };
   }
 
   // Fallback if the user configured a standard chat model instead of Jev as System 1
-  const fallbackReply = await callGenerativeCompletion(
+  const fallbackResult = await callGenerativeCompletion(
     config.jeff.provider,
     config.jeff.modelId,
     [
@@ -743,15 +1059,26 @@ TypeSafe's Jev (System 1) triaged this prompt at cognitive score ${primitives.co
     selectedModelName: null,
     selectedModelTier: 'jeff',
     jeffLatencyMs,
+    system1Cost: fallbackResult.cost,
+    system1Tokens: fallbackResult.tokens,
   };
   onRoutingComplete(decision);
 
+  const cost: CostBreakdown = {
+    system1Cost: fallbackResult.cost,
+    system2Cost: 0,
+    totalCost: fallbackResult.cost,
+    system1Tokens: fallbackResult.tokens,
+    isEstimated: fallbackResult.isEstimated,
+  };
+
   return {
     decision,
-    finalContent: fallbackReply,
+    finalContent: fallbackResult.content,
     finalModelName: `${config.jeff.displayName} (${config.jeff.modelId})`,
     finalModelId: config.jeff.modelId,
     finalModelTier: 'jeff',
+    cost,
   };
 }
 
@@ -768,6 +1095,7 @@ export async function forceCallSophisticatedModel(
   content: string;
   latencyMs: number;
   usedDemo: boolean;
+  cost?: CostBreakdown;
 }> {
   const start = performance.now();
   const hasCreds =
@@ -788,10 +1116,25 @@ export async function forceCallSophisticatedModel(
         jeffLatencyMs: 0,
         usedDemoSimulation: true,
       };
+      const pTokens = Math.max(90, Math.round(userPrompt.length / 3) + 120);
+      const cTokens = targetModel.tier === 'argon' ? 580 : 320;
+      const s2Cost = estimateModelCost(targetModel.modelId, pTokens, cTokens);
+      const cost: CostBreakdown = {
+        system1Cost: 0,
+        system2Cost: s2Cost,
+        totalCost: s2Cost,
+        system2Tokens: {
+          promptTokens: pTokens,
+          completionTokens: cTokens,
+          totalTokens: pTokens + cTokens,
+        },
+        isEstimated: true,
+      };
       return {
         content: generateSimulatedEscalatedAnswer(userPrompt, targetModel, dummyDecision),
         latencyMs: Math.round(performance.now() - start),
         usedDemo: true,
+        cost,
       };
     }
     throw new Error('No API key configured. Please log in to OpenRouter in Configuration.');
@@ -809,7 +1152,7 @@ export async function forceCallSophisticatedModel(
       content: m.content,
     }));
 
-  const content = await callGenerativeCompletion(
+  const completionResult = await callGenerativeCompletion(
     effectiveProvider,
     targetModel.modelId,
     [
@@ -825,9 +1168,18 @@ export async function forceCallSophisticatedModel(
     signal
   );
 
+  const cost: CostBreakdown = {
+    system1Cost: 0,
+    system2Cost: completionResult.cost,
+    totalCost: completionResult.cost,
+    system2Tokens: completionResult.tokens,
+    isEstimated: completionResult.isEstimated,
+  };
+
   return {
-    content,
+    content: completionResult.content,
     latencyMs: Math.round(performance.now() - start),
     usedDemo: false,
+    cost,
   };
 }

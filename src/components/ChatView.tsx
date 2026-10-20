@@ -21,10 +21,12 @@ import {
   Ban,
   Play,
   Split,
+  Coins,
 } from 'lucide-react';
 import { AppConfig, ChatMessage, SophisticatedModel } from '../types';
 import { SAMPLE_PROMPTS } from '../defaultConfig';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { formatCost } from '../services/routerEngine';
 
 interface ChatViewProps {
   config: AppConfig;
@@ -380,10 +382,21 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
                       <div className="flex items-center gap-2 text-xs text-slate-400">
                         {msg.routing && (
-                          <span className="flex items-center gap-1 font-mono text-[11px]">
-                            <Clock className="w-3 h-3" />
-                            {msg.routing.jeffLatencyMs}ms
-                          </span>
+                          <>
+                            <span className="flex items-center gap-1 font-mono text-[11px]">
+                              <Clock className="w-3 h-3" />
+                              {msg.routing.jeffLatencyMs}ms
+                            </span>
+                            {(msg.routing.system1Cost !== undefined || msg.cost?.system1Cost !== undefined) && (
+                              <span
+                                className="flex items-center gap-1 font-mono text-[11px] text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/25"
+                                title={`System 1 (${config.jeff.displayName}) triage cost`}
+                              >
+                                <Coins className="w-3 h-3 text-amber-400" />
+                                {formatCost(msg.cost?.system1Cost ?? msg.routing.system1Cost ?? 0)}
+                              </span>
+                            )}
+                          </>
                         )}
                         {isTraceOpen ? (
                           <ChevronUp className="w-4 h-4 text-slate-500" />
@@ -489,6 +502,55 @@ export const ChatView: React.FC<ChatViewProps> = ({
                             </div>
                           </div>
                         )}
+
+                        {/* Cost & Token Usage Breakdown */}
+                        <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          <div className="flex items-center flex-wrap gap-2.5 text-slate-300">
+                            <span className="flex items-center gap-1">
+                              <Coins className="w-3 h-3 text-amber-400" />
+                              <strong className="text-slate-400">System 1 Cost:</strong>
+                              <span className="font-mono text-amber-300 font-semibold">
+                                {formatCost(msg.cost?.system1Cost ?? msg.routing.system1Cost ?? 0)}
+                              </span>
+                              {msg.routing.system1Tokens && (
+                                <span className="text-slate-500 font-mono text-[10px]">
+                                  ({msg.routing.system1Tokens.promptTokens} in / {msg.routing.system1Tokens.completionTokens} out tokens)
+                                </span>
+                              )}
+                            </span>
+
+                            {msg.cost && msg.cost.system2Cost > 0 && (
+                              <span className="flex items-center gap-1">
+                                <span className="text-slate-600">•</span>
+                                <strong className="text-slate-400">System 2 Cost:</strong>
+                                <span className="font-mono text-violet-300 font-semibold">
+                                  {formatCost(msg.cost.system2Cost)}
+                                </span>
+                                {msg.cost.system2Tokens && (
+                                  <span className="text-slate-500 font-mono text-[10px]">
+                                    ({msg.cost.system2Tokens.promptTokens} in / {msg.cost.system2Tokens.completionTokens} out tokens)
+                                  </span>
+                                )}
+                              </span>
+                            )}
+
+                            {msg.cost && (
+                              <span className="flex items-center gap-1">
+                                <span className="text-slate-600">•</span>
+                                <strong className="text-slate-400">Total:</strong>
+                                <span className="font-mono text-emerald-300 font-semibold">
+                                  {formatCost(msg.cost.totalCost)}
+                                </span>
+                              </span>
+                            )}
+                          </div>
+
+                          <span className="text-[10px] text-slate-500">
+                            {msg.cost?.isEstimated
+                              ? '• Estimated via token rates'
+                              : '• Exact API provider billing'}
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -534,6 +596,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         <strong className="text-white font-mono">
                           {msg.routing?.jeffLatencyMs || 0}ms
                         </strong>
+                        {(msg.routing?.system1Cost !== undefined || msg.cost?.system1Cost !== undefined) && (
+                          <>
+                            {' '}
+                            (cost:{' '}
+                            <strong className="text-amber-300 font-mono">
+                              {formatCost(msg.cost?.system1Cost ?? msg.routing?.system1Cost ?? 0)}
+                            </strong>
+                            )
+                          </>
+                        )}
                         {msg.routing?.selectedModelName && (
                           <>
                             {' '}
@@ -541,7 +613,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                             <strong className="text-indigo-300 font-semibold">
                               {msg.routing.selectedModelName}
                             </strong>{' '}
-                            was the optimal System 2 model.
+                            was the optimal System 2 model. System 2 deliberation was halted with zero additional token cost.
                           </>
                         )}
                       </p>
@@ -616,14 +688,31 @@ export const ChatView: React.FC<ChatViewProps> = ({
                           </span>
                         </div>
 
-                        {msg.totalLatencyMs !== undefined && (
-                          <span className="text-[11px] font-mono text-slate-400">
-                            Total: {msg.totalLatencyMs}ms
-                            {msg.escalationLatencyMs
-                              ? ` (System 2: ${msg.escalationLatencyMs}ms)`
-                              : ''}
-                          </span>
-                        )}
+                        <div className="flex items-center flex-wrap gap-2.5">
+                          {msg.totalLatencyMs !== undefined && (
+                            <span className="text-[11px] font-mono text-slate-400">
+                              Total: {msg.totalLatencyMs}ms
+                              {msg.escalationLatencyMs
+                                ? ` (System 2: ${msg.escalationLatencyMs}ms)`
+                                : ''}
+                            </span>
+                          )}
+
+                          {msg.cost !== undefined && (
+                            <span
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/25 text-amber-300 font-mono text-[11px]"
+                              title={`Total query cost: ${formatCost(msg.cost.totalCost)} (System 1: ${formatCost(msg.cost.system1Cost)} + System 2: ${formatCost(msg.cost.system2Cost)})${msg.cost.isEstimated ? ' [Estimated from model token rates]' : ' [Exact API provider usage]'}`}
+                            >
+                              <Coins className="w-3.5 h-3.5 text-amber-400" />
+                              <span>{formatCost(msg.cost.totalCost)}</span>
+                              {msg.cost.isEstimated ? (
+                                <span className="text-[9px] text-amber-400/70 uppercase">est</span>
+                              ) : (
+                                <span className="text-[9px] text-emerald-400/90 uppercase font-semibold">api</span>
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <MarkdownRenderer content={msg.content} />

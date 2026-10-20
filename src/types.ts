@@ -57,6 +57,23 @@ export interface JevPrimitivesBreakdown {
   choiceProbabilities: Record<string, number>;
 }
 
+export interface CostBreakdown {
+  system1Cost: number; // in USD ($)
+  system2Cost: number; // in USD ($)
+  totalCost: number;   // in USD ($)
+  system1Tokens?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  system2Tokens?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  isEstimated: boolean; // true if estimated from heuristic rates/tokens, false if from exact provider API usage
+}
+
 export interface RoutingDecision {
   answeredByJeff: boolean;
   complexityScore: number; // Normalized 1-10 for UI badge
@@ -69,6 +86,12 @@ export interface RoutingDecision {
   jeffLatencyMs: number;
   usedDemoSimulation?: boolean;
   jevPrimitives?: JevPrimitivesBreakdown;
+  system1Cost?: number;
+  system1Tokens?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 }
 
 export interface PipelineOptions {
@@ -90,6 +113,7 @@ export interface ChatMessage {
   finalModelTier?: ModelTier | 'jeff';
   escalationLatencyMs?: number;
   totalLatencyMs?: number;
+  cost?: CostBreakdown;
   errorMessage?: string;
 }
 
