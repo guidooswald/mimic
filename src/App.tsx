@@ -7,6 +7,8 @@ import {
   Activity,
   Lock,
   Coins,
+  Info,
+  TrendingDown,
 } from 'lucide-react';
 import { AppConfig, ChatMessage, CostBreakdown, SophisticatedModel } from './types';
 import { DEFAULT_CONFIG } from './defaultConfig';
@@ -85,6 +87,7 @@ export function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(loadInitialMessages);
   const [isProcessing, setIsProcessing] = useState(false);
   const [oauthToast, setOauthToast] = useState<string | null>(null);
+  const [showCostInfo, setShowCostInfo] = useState(false);
   const [vaultMetadata, setVaultMetadata] = useState<LocalVaultMetadata>({
     exists: false,
     encryptedFilePath: '.secrets/credentials.enc.json',
@@ -496,18 +499,87 @@ export function App() {
               {escalatedCount} System 2 (Flash / Argon)
             </span>
             <span className="text-slate-600">•</span>
-            <span
-              className="text-amber-300 font-mono font-medium flex items-center gap-1.5"
-              title={`Total session cost: ${formatCost(totalSessionCost)}. Estimated saved via System 1 triage / direct resolution: ~${formatCost(estimatedSavings)}.`}
+            
+            {/* Cost & Savings Popover Trigger */}
+            <div
+              className="relative flex items-center"
+              onMouseEnter={() => setShowCostInfo(true)}
+              onMouseLeave={() => setShowCostInfo(false)}
             >
-              <Coins className="w-3.5 h-3.5 text-amber-400" />
-              <span>Cost: {formatCost(totalSessionCost)}</span>
-              {estimatedSavings > 0 && (
-                <span className="text-emerald-400 font-normal text-[11px]">
-                  (Saved ~{formatCost(estimatedSavings)})
-                </span>
-              )}
-            </span>
+              <button
+                type="button"
+                onClick={() => setShowCostInfo((prev) => !prev)}
+                className="text-amber-300 font-mono font-medium flex items-center gap-1.5 cursor-pointer hover:text-amber-200 transition-colors focus:outline-none"
+                aria-label="View Cost and Savings calculation breakdown"
+              >
+                <Coins className="w-3.5 h-3.5 text-amber-400" />
+                <span>Cost: {formatCost(totalSessionCost)}</span>
+                {estimatedSavings > 0 && (
+                  <span className="text-emerald-400 font-normal text-[11px] flex items-center gap-1 underline decoration-emerald-500/40 decoration-dotted underline-offset-2">
+                    <span>(Saved ~{formatCost(estimatedSavings)})</span>
+                    <Info className="w-3 h-3 text-emerald-400/80" />
+                  </span>
+                )}
+              </button>
+
+              {/* Hover / Click Info Window */}
+              <div
+                className={`absolute top-full right-0 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 mt-2.5 w-80 sm:w-96 p-4 rounded-2xl bg-slate-900/98 border border-slate-700/90 shadow-2xl backdrop-blur-xl z-50 text-left transition-all duration-200 pointer-events-auto ${
+                  showCostInfo
+                    ? 'opacity-100 visible translate-y-0'
+                    : 'opacity-0 invisible -translate-y-1 pointer-events-none'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3 pb-2.5 border-b border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                      <TrendingDown className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-semibold text-white tracking-tight">
+                        Dual-Process Cost &amp; Savings
+                      </h4>
+                      <span className="text-[10px] text-slate-400">
+                        Kahneman Fast vs. Slow LLM Economics
+                      </span>
+                    </div>
+                  </div>
+                  {estimatedSavings > 0 && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 shrink-0">
+                      Saved ~{formatCost(estimatedSavings)}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-3 space-y-2.5 text-xs text-slate-300 leading-relaxed font-sans">
+                  <div>
+                    <span className="font-semibold text-emerald-400">Why is there a &ldquo;Saved&rdquo; amount?</span>
+                    <p className="mt-0.5 text-slate-300">
+                      Without System 1 triage, <em>every single user prompt</em> is automatically routed to a slow, expensive frontier LLM (e.g. Gemini Argon, Claude Sonnet, or OpenAI o3) averaging <strong>~$0.0045</strong> per call.
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1 text-[11px] font-mono">
+                    <div className="flex justify-between items-center text-slate-300">
+                      <span>• System 1 Triage (Jev):</span>
+                      <span className="text-emerald-400">~$0.000012 / query</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-300">
+                      <span>• Frontier System 2 Call:</span>
+                      <span className="text-violet-300">~$0.004500 / query</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-400 pt-1 border-t border-slate-800/80">
+                      <span>Cost avoided per bypassed turn:</span>
+                      <span className="text-emerald-300 font-semibold font-mono">+~$0.004488</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 leading-normal">
+                    When <strong>TypeSafe Jev</strong> resolves a prompt directly in ~100ms or when you use <em>Triage-Only</em> mode, costly System 2 generation is bypassed, accumulating the savings above.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
