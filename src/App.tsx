@@ -9,6 +9,8 @@ import {
   Coins,
   Info,
   TrendingDown,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { AppConfig, ChatMessage, CostBreakdown, SophisticatedModel } from './types';
 import { DEFAULT_CONFIG } from './defaultConfig';
@@ -88,6 +90,36 @@ export function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [oauthToast, setOauthToast] = useState<string | null>(null);
   const [showCostInfo, setShowCostInfo] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try {
+      const saved = localStorage.getItem('mimic_theme');
+      if (saved === 'light' || saved === 'dark') return saved;
+      return 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('mimic_theme', theme);
+    } catch (e) {
+      console.error('Failed to save theme preference:', e);
+    }
+    const root = document.documentElement;
+    if (theme === 'light') {
+      root.classList.remove('dark');
+      root.classList.add('light');
+    } else {
+      root.classList.remove('light');
+      root.classList.add('dark');
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   const [vaultMetadata, setVaultMetadata] = useState<LocalVaultMetadata>({
     exists: false,
     encryptedFilePath: '.secrets/credentials.enc.json',
@@ -446,7 +478,7 @@ export function App() {
   );
 
   return (
-    <div className="h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
+    <div className={`h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden ${theme}`}>
       {/* OAuth Notification Banner */}
       {oauthToast && (
         <div className="bg-emerald-600/95 text-white px-4 py-2 text-xs font-medium flex items-center justify-center gap-2 shadow-md">
@@ -583,44 +615,62 @@ export function App() {
           </div>
         )}
 
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+        {/* Navigation Tabs and Theme Switcher */}
+        <div className="flex items-center gap-2">
+          {/* Theme Switcher Button */}
           <button
             type="button"
-            onClick={() => setActiveTab('chat')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-              activeTab === 'chat'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
+            onClick={toggleTheme}
+            className="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-900/90 hover:bg-slate-800/80 border border-slate-800 text-slate-400 hover:text-slate-200 transition-all cursor-pointer shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+            aria-label="Toggle light or dark theme"
           >
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>Chat</span>
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400 transition-transform duration-200 hover:rotate-45" />
+            ) : (
+              <Moon className="w-4 h-4 text-indigo-600 transition-transform duration-200 hover:-rotate-12" />
+            )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('config')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-              activeTab === 'config'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Configuration &amp; APIs</span>
-            {vaultMetadata.exists && (
-              <span title="Encrypted in .secrets/credentials.enc.json">
-                <Lock className="w-3 h-3 text-emerald-400" />
-              </span>
-            )}
-            <span
-              className={`w-2 h-2 rounded-full ${
-                isConnected ? 'bg-emerald-400' : 'bg-amber-400'
+          {/* Navigation Tabs */}
+          <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveTab('chat')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                activeTab === 'chat'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
-              title={isConnected ? 'API Key Encrypted & Active' : 'Demo Mode (Click to configure API)'}
-            />
-          </button>
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Chat</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('config')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                activeTab === 'config'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Configuration &amp; APIs</span>
+              {vaultMetadata.exists && (
+                <span title="Encrypted in .secrets/credentials.enc.json">
+                  <Lock className="w-3 h-3 text-emerald-400" />
+                </span>
+              )}
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isConnected ? 'bg-emerald-400' : 'bg-amber-400'
+                }`}
+                title={isConnected ? 'API Key Encrypted & Active' : 'Demo Mode (Click to configure API)'}
+              />
+            </button>
+          </div>
         </div>
       </header>
 

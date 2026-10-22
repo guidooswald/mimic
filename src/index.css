@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 @layer base {
   body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -8,6 +10,104 @@
   code, pre {
     font-family: 'JetBrains Mono', monospace;
   }
+}
+
+/* Light Theme Variables & Overrides */
+html.light,
+.light {
+  color-scheme: light;
+
+  /* Slate background & surface remapping for light mode */
+  --color-slate-950: #f8fafc; /* canvas background: slate-50 */
+  --color-slate-900: #ffffff; /* cards, containers, panels: pure white */
+  --color-slate-800: #e2e8f0; /* card borders: slate-200 */
+  --color-slate-700: #cbd5e1; /* sub-borders, dividers, inputs: slate-300 */
+  --color-slate-600: #94a3b8; /* subtle dividers: slate-400 */
+  --color-slate-500: #64748b; /* muted text / placeholders: slate-500 */
+  --color-slate-400: #475569; /* secondary text: slate-600 */
+  --color-slate-300: #334155; /* reading text: slate-700 */
+  --color-slate-200: #1e293b; /* strong text: slate-800 */
+  --color-slate-100: #0f172a; /* headings / primary text: slate-900 */
+  --color-slate-50: #020617;
+
+  /* High-contrast readable accents on light mode surfaces */
+  --color-emerald-300: #047857;
+  --color-emerald-400: #065f46;
+  --color-sky-300: #0369a1;
+  --color-sky-400: #075985;
+  --color-violet-300: #6d28d9;
+  --color-violet-400: #5b21b6;
+  --color-amber-300: #b45309;
+  --color-amber-400: #92400e;
+  --color-indigo-300: #4338ca;
+  --color-indigo-400: #3730a3;
+  --color-rose-300: #be123c;
+  --color-rose-400: #9f1239;
+}
+
+/* Light mode heading adjustments, keeping colored buttons and pills crisp */
+html.light h1.text-white,
+html.light h2.text-white,
+html.light h3.text-white,
+html.light h4.text-white,
+html.light strong.text-white,
+html.light input.text-white,
+html.light select.text-white,
+html.light textarea.text-white,
+.light h1.text-white,
+.light h2.text-white,
+.light h3.text-white,
+.light h4.text-white,
+.light strong.text-white,
+.light input.text-white,
+.light select.text-white,
+.light textarea.text-white {
+  color: #0f172a;
+}
+
+html.light .text-white:not(
+  .bg-indigo-600,
+  .bg-indigo-600 *,
+  .bg-rose-600,
+  .bg-rose-600 *,
+  .bg-emerald-600,
+  .bg-emerald-600 *,
+  .bg-emerald-500,
+  .bg-emerald-500 *,
+  .bg-gradient-to-r,
+  .bg-gradient-to-r *,
+  .bg-gradient-to-br,
+  .bg-gradient-to-br *,
+  [class*="bg-indigo-600"],
+  [class*="bg-rose-600"],
+  [class*="bg-emerald-600"]
+) {
+  color: #0f172a;
+}
+
+/* Light mode markdown blockquotes */
+html.light blockquote,
+.light blockquote {
+  background-color: rgba(99, 102, 241, 0.08) !important;
+  border-left-color: #6366f1 !important;
+  color: #334155 !important;
+}
+
+/* Light mode scrollbar */
+html.light ::-webkit-scrollbar-thumb,
+.light ::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.25);
+}
+
+html.light ::-webkit-scrollbar-thumb:hover,
+.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.45);
+}
+
+/* Subtle card shadow in light mode */
+html.light .bg-slate-900,
+.light .bg-slate-900 {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
 }
 
 /* Custom subtle scrollbars */
