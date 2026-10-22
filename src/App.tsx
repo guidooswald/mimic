@@ -456,7 +456,7 @@ export function App() {
       )}
 
       {/* Top Navigation Header */}
-      <header className="px-4 sm:px-6 h-16 border-b border-slate-800/90 bg-slate-950/90 backdrop-blur-md flex items-center justify-between gap-4 shrink-0">
+      <header className="relative z-50 px-4 sm:px-6 h-16 border-b border-slate-800/90 bg-slate-950/90 backdrop-blur-md flex items-center justify-between gap-4 shrink-0">
         <button
           type="button"
           onClick={() => {
@@ -524,7 +524,7 @@ export function App() {
 
               {/* Hover / Click Info Window */}
               <div
-                className={`absolute top-full right-0 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 mt-2.5 w-80 sm:w-96 p-4 rounded-2xl bg-slate-900/98 border border-slate-700/90 shadow-2xl backdrop-blur-xl z-50 text-left transition-all duration-200 pointer-events-auto ${
+                className={`absolute top-full right-0 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 mt-2.5 w-80 sm:w-96 p-4 rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl shadow-black/80 backdrop-blur-xl z-50 text-left transition-all duration-200 pointer-events-auto ${
                   showCostInfo
                     ? 'opacity-100 visible translate-y-0'
                     : 'opacity-0 invisible -translate-y-1 pointer-events-none'
