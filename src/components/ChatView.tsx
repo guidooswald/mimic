@@ -27,6 +27,13 @@ import { AppConfig, ChatMessage, SophisticatedModel } from '../types';
 import { SAMPLE_PROMPTS } from '../defaultConfig';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { formatCost } from '../services/routerEngine';
+import {
+  NoulExplainerBox,
+  ScoreExplainerBox,
+  ChoiceExplainerBox,
+  HeaderPillExplainer,
+  FinalOutputBadgeExplainer,
+} from './JevExplainerPopups';
 
 interface ChatViewProps {
   config: AppConfig;
@@ -319,11 +326,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <div key={msg.id} className="flex justify-start">
                 <div className="w-full max-w-3xl space-y-2.5">
                   {/* System 1 (Jev) Telemetry Card */}
-                  <div className="rounded-xl border border-slate-800/90 bg-slate-900/75 overflow-hidden shadow-sm">
+                  <div className="rounded-xl border border-slate-800/90 bg-slate-900/75 relative shadow-sm hover:z-20">
                     <button
                       type="button"
                       onClick={() => toggleTrace(msg.id)}
-                      className="w-full px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-left hover:bg-slate-800/40 transition-colors cursor-pointer"
+                      className={`w-full px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-left hover:bg-slate-800/40 transition-colors cursor-pointer ${
+                        isTraceOpen ? 'rounded-t-xl' : 'rounded-xl'
+                      }`}
                     >
                       <div className="flex items-center flex-wrap gap-2">
                         <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
@@ -344,38 +353,44 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         {msg.routing && (
                           <>
                             {primitives && (
-                              <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-emerald-300 border border-slate-700 font-mono">
-                                noul={primitives.answerAlreadyPresentNoul.toFixed(2)}
-                              </span>
-                            )}
-
-                            <span
-                              className={`text-[11px] px-2 py-0.5 rounded-md border font-mono font-medium ${getComplexityColor(
-                                msg.routing.complexityScore
-                              )}`}
-                            >
-                              {primitives
-                                ? `score=${primitives.complexityScoreRaw.toFixed(2)}/3.0`
-                                : `Load ${msg.routing.complexityScore}/10`}
-                            </span>
-
-                            {msg.routing.answeredByJeff ? (
-                              <span className="flex items-center gap-1 text-xs font-medium text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-md">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>Resolved via System 1</span>
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1.5 text-xs font-medium">
-                                <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-                                <span
-                                  className={`px-2 py-0.5 rounded-md border ${getTierBadgeStyle(
-                                    msg.routing.selectedModelTier
-                                  )}`}
-                                >
-                                  System 2: {msg.routing.selectedModelName}
+                              <HeaderPillExplainer type="noul" routing={msg.routing} config={config}>
+                                <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-emerald-300 border border-slate-700 font-mono">
+                                  noul={primitives.answerAlreadyPresentNoul.toFixed(2)}
                                 </span>
-                              </span>
+                              </HeaderPillExplainer>
                             )}
+
+                            <HeaderPillExplainer type="score" routing={msg.routing} config={config}>
+                              <span
+                                className={`text-[11px] px-2 py-0.5 rounded-md border font-mono font-medium ${getComplexityColor(
+                                  msg.routing.complexityScore
+                                )}`}
+                              >
+                                {primitives
+                                  ? `score=${primitives.complexityScoreRaw.toFixed(2)}/3.0`
+                                  : `Load ${msg.routing.complexityScore}/10`}
+                              </span>
+                            </HeaderPillExplainer>
+
+                            <HeaderPillExplainer type="decision" routing={msg.routing} config={config}>
+                              {msg.routing.answeredByJeff ? (
+                                <span className="flex items-center gap-1 text-xs font-medium text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-md">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>Resolved via System 1</span>
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1.5 text-xs font-medium">
+                                  <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
+                                  <span
+                                    className={`px-2 py-0.5 rounded-md border ${getTierBadgeStyle(
+                                      msg.routing.selectedModelTier
+                                    )}`}
+                                  >
+                                    System 2: {msg.routing.selectedModelName}
+                                  </span>
+                                </span>
+                              )}
+                            </HeaderPillExplainer>
                           </>
                         )}
                       </div>
@@ -407,7 +422,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     </button>
 
                     {isTraceOpen && msg.routing && (
-                      <div className="px-3.5 py-3 border-t border-slate-800/80 bg-slate-950/60 text-xs space-y-3">
+                      <div className="px-3.5 py-3 border-t border-slate-800/80 bg-slate-950/60 text-xs space-y-3 rounded-b-xl relative">
                         <div className="flex items-start gap-2 text-slate-300">
                           <span className="font-semibold text-emerald-400 shrink-0">
                             System 1 Judgment:
@@ -419,87 +434,26 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         {primitives && (
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
                             {/* 1. NOUL Primitive */}
-                            <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1">
-                              <div className="flex items-center justify-between">
-                                <span className="font-mono text-[11px] text-emerald-400 font-semibold">
-                                  noul (Answer Ready)
-                                </span>
-                                <span className="font-mono text-xs font-bold text-white">
-                                  {Math.round(primitives.answerAlreadyPresentNoul * 100)}%
-                                </span>
-                              </div>
-                              <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                                <div
-                                  className="h-full bg-emerald-500 rounded-full"
-                                  style={{
-                                    width: `${Math.min(
-                                      100,
-                                      Math.round(primitives.answerAlreadyPresentNoul * 100)
-                                    )}%`,
-                                  }}
-                                />
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                Threshold ≥ {Math.round(config.jeff.noulSelfAnswerThreshold * 100)}%
-                                stays in System 1
-                              </div>
-                            </div>
+                            <NoulExplainerBox
+                              primitives={primitives}
+                              config={config}
+                              answeredByJeff={msg.routing.answeredByJeff}
+                              routing={msg.routing}
+                            />
 
                             {/* 2. SCORE Primitive */}
-                            <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1">
-                              <div className="flex items-center justify-between">
-                                <span className="font-mono text-[11px] text-sky-400 font-semibold">
-                                  score (Cognitive Load)
-                                </span>
-                                <span className="font-mono text-xs font-bold text-white">
-                                  {primitives.complexityScoreRaw.toFixed(2)} / 3.0
-                                </span>
-                              </div>
-                              <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                                <div
-                                  className="h-full bg-sky-500 rounded-full"
-                                  style={{
-                                    width: `${Math.min(
-                                      100,
-                                      Math.round((primitives.complexityScoreRaw / 3) * 100)
-                                    )}%`,
-                                  }}
-                                />
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                Confidence: {Math.round(primitives.complexityConfidence * 100)}%
-                              </div>
-                            </div>
+                            <ScoreExplainerBox
+                              primitives={primitives}
+                              routing={msg.routing}
+                              config={config}
+                            />
 
                             {/* 3. CHOICE Primitive */}
-                            <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1">
-                              <div className="flex items-center justify-between">
-                                <span className="font-mono text-[11px] text-violet-400 font-semibold">
-                                  choice (Target Route)
-                                </span>
-                                <span className="font-mono text-[11px] text-slate-300">
-                                  conf {Math.round(primitives.choiceConfidence * 100)}%
-                                </span>
-                              </div>
-                              <div className="space-y-1 pt-0.5">
-                                {Object.entries(primitives.choiceProbabilities)
-                                  .sort((a, b) => b[1] - a[1])
-                                  .slice(0, 3)
-                                  .map(([key, prob]) => (
-                                    <div
-                                      key={key}
-                                      className="flex items-center justify-between text-[10px] font-mono"
-                                    >
-                                      <span className="text-slate-300 truncate max-w-[120px]">
-                                        {key === 'system1_direct' ? 'system1_direct' : key}
-                                      </span>
-                                      <span className="text-indigo-300 font-semibold">
-                                        {Math.round(prob * 100)}%
-                                      </span>
-                                    </div>
-                                  ))}
-                              </div>
-                            </div>
+                            <ChoiceExplainerBox
+                              primitives={primitives}
+                              routing={msg.routing}
+                              config={config}
+                            />
                           </div>
                         )}
 
@@ -674,15 +628,23 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     <div className="rounded-2xl rounded-tl-sm px-5 py-4 bg-slate-900/90 border border-slate-800 shadow-lg space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
                         <div className="flex items-center gap-2">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-md border text-xs font-semibold ${getTierBadgeStyle(
-                              msg.finalModelTier
-                            )}`}
+                          <FinalOutputBadgeExplainer
+                            tier={msg.finalModelTier}
+                            modelName={msg.finalModelName}
+                            modelId={msg.finalModelId}
+                            routing={msg.routing}
+                            config={config}
                           >
-                            {msg.finalModelTier === 'jeff'
-                              ? `System 1 Fast Output (${config.jeff.displayName})`
-                              : `System 2 Deliberative Output (${msg.finalModelName})`}
-                          </span>
+                            <span
+                              className={`px-2.5 py-0.5 rounded-md border text-xs font-semibold ${getTierBadgeStyle(
+                                msg.finalModelTier
+                              )}`}
+                            >
+                              {msg.finalModelTier === 'jeff'
+                                ? `System 1 Fast Output (${config.jeff.displayName})`
+                                : `System 2 Deliberative Output (${msg.finalModelName})`}
+                            </span>
+                          </FinalOutputBadgeExplainer>
                           <span className="text-[11px] font-mono text-slate-400">
                             {msg.finalModelId}
                           </span>
