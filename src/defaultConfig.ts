@@ -146,9 +146,15 @@ export const DEFAULT_CONFIG: AppConfig = {
 
 export const SAMPLE_PROMPTS = [
   {
-    label: 'System 1 Fast Verification (Served by Jev Alone)',
+    label: 'System 1 Fast Verification — Affirmative (Yes)',
     prompt: 'Is Canberra the capital city of Australia?',
-    expectedRoute: 'Jev System 1 (Zero System 2 Calls)',
+    expectedRoute: 'System 1 Fast-Path (Yes, Canberra is Capital)',
+    badgeColor: 'emerald',
+  },
+  {
+    label: 'System 1 Fast Verification — Negative (No)',
+    prompt: 'Is Zurich the capital of Switzerland?',
+    expectedRoute: 'System 1 Fast-Path (No, Bern is Capital)',
     badgeColor: 'emerald',
   },
   {
